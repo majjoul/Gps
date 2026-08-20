@@ -3,63 +3,125 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>تطبيق الطقس البسيط</title>
+    <title>منظومة الطقس والمخاطر</title>
     <style>
-        body { font-family: Arial, sans-serif; background: #0f172a; color: white; margin: 0; padding: 20px; padding-bottom: 70px; }
-        .box { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 500px; margin: 20px auto; }
-        input, button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; font-size: 16px; box-sizing: border-box; }
-        button { background: #2563eb; border: none; font-weight: bold; cursor: pointer; }
+        * { box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #ffffff; color: #000000; margin: 0; padding: 20px; padding-bottom: 90px; }
+        .box { background: #f8f9fa; border: 1px solid #e5e7eb; padding: 20px; border-radius: 14px; max-width: 500px; margin: 20px auto; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        h1 { text-align: center; font-size: 28px; margin-bottom: 5px; color: #000; }
+        .subtitle { text-align: center; color: #4b5563; margin-bottom: 20px; font-size: 13px; }
+        
+        label { display: block; margin-top: 10px; color: #374151; font-size: 14px; font-weight: bold; }
+        input, button { width: 100%; padding: 12px; margin-top: 5px; border-radius: 8px; border: 1px solid #d1d5db; background: #ffffff; color: #000000; font-size: 16px; box-sizing: border-box; }
+        button { background: #000000; color: #ffffff; border: none; font-weight: bold; cursor: pointer; margin-top: 15px; }
+        button:hover { background: #374151; }
+
         .section { display: none; }
         .section.active { display: block; }
-        .nav { position: fixed; bottom: 0; left: 0; width: 100%; background: #1e293b; display: none; justify-content: space-around; padding: 10px 0; border-top: 1px solid #334155; }
-        .nav button { background: none; border: none; color: #94a3b8; font-size: 16px; cursor: pointer; width: auto; margin: 0; }
-        .nav button.active { color: #2563eb; }
+
+        /* الشريط السفلي (مخفي تماماً عند البداية) */
+        .nav { position: fixed; bottom: 0; left: 0; width: 100%; background: #ffffff; display: none; justify-content: space-around; padding: 12px 0; border-top: 1px solid #e5e7eb; z-index: 1000; box-shadow: 0 -2px 10px rgba(0,0,0,0.05); }
+        .nav button { background: none; border: none; color: #6b7280; font-size: 15px; cursor: pointer; width: auto; margin: 0; font-weight: normal; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .nav button.active { color: #000000; font-weight: bold; }
+
+        /* صندوق التحذير الخطير */
+        .alert-box { background: #000000; color: #ffffff; border: 1px solid #000; padding: 15px; border-radius: 10px; margin-bottom: 15px; display: none; font-weight: bold; text-align: center; }
+
+        /* تصميم الأخبار الحقيقية */
+        .news-item { background: #ffffff; border: 1px solid #e5e7eb; padding: 15px; border-radius: 10px; margin-bottom: 12px; }
+        .news-item h3 { margin: 0 0 6px 0; font-size: 16px; color: #000; }
+        .news-item p { margin: 0 0 10px 0; color: #4b5563; font-size: 13px; line-height: 1.4; }
+        .news-link { color: #000000; text-decoration: underline; font-weight: bold; font-size: 13px; }
+
+        /* عرض درجة الحرارة بحجم كبير وجذاب */
+        .big-temp { font-size: 48px; font-weight: bold; text-align: center; margin: 15px 0; color: #000; }
+        .weather-details { text-align: center; font-size: 16px; color: #374151; margin-bottom: 15px; }
     </style>
 </head>
 <body>
 
-    <!-- 1. تسجيل البيانات -->
+    <div class="subtitle" style="font-size: 22px; color: #000; font-weight: bold; margin-top: 10px; text-align: center;">منظومة الطقس والمخاطر</div>
+
+    <!-- صندوق التحذير الخطير (يظهر إذا الحرارة < 10 أو > 40) -->
+    <div id="dangerAlert" class="alert-box">
+        ⚠️ تنبيه خطر: درجات الحرارة غير صالحة (أقل من 10 أو أعلى من 40 درجة)!
+    </div>
+
+    <!-- 1. تسجيل البيانات (إجباري بالحقول الأربعة) -->
     <div id="loginSec" class="section active box">
         <h2>تسجيل البيانات للبدء</h2>
-        <input type="text" id="name" placeholder="الاسم">
-        <input type="text" id="city" placeholder="المدينة">
-        <input type="text" id="country" placeholder="الدولة">
-        <input type="number" id="age" placeholder="العمر">
-        <button onclick="login()">دخول</button>
+        <p style="color: #4b5563; font-size: 13px;">يجب تعبئة جميع الحقول التالية لفتح التطبيق والشريط السفلي:</p>
+        
+        <label>الاسم:</label>
+        <input type="text" id="nameInput" placeholder="أدخل اسمك">
+        
+        <label>المدينة:</label>
+        <input type="text" id="cityInput" placeholder="أدخل مدينتك">
+        
+        <label>الدولة:</label>
+        <input type="text" id="countryInput" placeholder="أدخل دولتك">
+        
+        <label>العمر:</label>
+        <input type="number" id="ageInput" placeholder="أدخل عمرك">
+
+        <button onclick="login()">حفظ ودخول</button>
     </div>
 
-    <!-- 2. الطقس -->
+    <!-- 2. الطقس (عبر الـ GPS حصرياً) -->
     <div id="weatherSec" class="section box">
-        <h2>حالة الطقس</h2>
-        <button onclick="getGPS()" style="background: #059669;">📍 حدد موقعي (GPS)</button>
-        <p id="weatherResult">اضغط الزر لجلب الطقس...</p>
+        <h2>حالة الطقس المباشرة</h2>
+        <p style="color: #4b5563; font-size: 13px;">مرحباً <span id="welcomeName" style="color:#000; font-weight:bold;"></span>، اضغط للتعرف على طقس موقعك بدقة:</p>
+        <button onclick="getGPS()">📍 حدد موقعي الحالي (GPS)</button>
+        
+        <!-- عرض حرارة بحجم كبير جداً -->
+        <div id="bigTempVal" class="big-temp" style="display: none;">-- °C</div>
+        <div id="weatherResult" class="weather-details" style="margin-top: 15px;">اضغط الزر لجلب الطقس...</div>
     </div>
 
-    <!-- 3. الأخبار -->
+    <!-- 3. الأخبار (أخبار حقيقية وعالمية) -->
     <div id="newsSec" class="section box">
-        <h2>الأخبار</h2>
-        <p id="newsResult">لا توجد أخبار حالياً، انتظر تحديث الطقس.</p>
+        <h2>الأخبار والتقارير العالمية الحية</h2>
+        <p style="color: #4b5563; font-size: 13px; margin-bottom: 15px;">آخر المستجدات الصحفية المتعلقة بالمناخ والبيئة:</p>
+        
+        <div class="news-item">
+            <h3>🌍 تقارير التغير المناخي وارتفاع درجات الحرارة العالمية</h3>
+            <p>أحدث دراسات المنظمات البيئية العالمية حول تطورات الغلاف الجوي وموجات الحرارة القياسية الموسمية.</p>
+            <a href="https://www.bbc.com/arabic/topics/c3wvrgywt8gt" target="_blank" class="news-link">اقرأ المقال الكامل عبر BBC عربي &larr;</a>
+        </div>
+
+        <div class="news-item">
+            <h3>🔥 تحليلات مخاطر حرائق الغابات وطرق الوقاية الدولية</h3>
+            <p>استعراض الأسباب الرئيسية لاندلاع الحرائق في المناطق الجافة وطرق التعامل معها من فرق الطوارئ.</p>
+            <a href="https://www.skynewsarabia.com" target="_blank" class="news-link">قراءة التقارير عبر سكاي نيوز &larr;</a>
+        </div>
+
+        <div class="news-item">
+            <h3>🌪️ رصد العواصف وحالة حركة الرياح والتقلبات الجوية</h3>
+            <p>متابعة حركة الضغط الجوي والرياح العاتية وتأثيرها المباشر على الأنشطة اليومية والملاحة.</p>
+            <a href="https://arabic.euronews.com/green" target="_blank" class="news-link">متابعة مقالات البيئة عبر يورونيوز &larr;</a>
+        </div>
     </div>
 
-    <!-- الشريط السفلي -->
+    <!-- الشريط السفلي (مخفي افتراضياً، يظهر بعد التسجيل) -->
     <div id="navBar" class="nav">
-        <button id="navW" class="active" onclick="switchTab('weatherSec', 'navW')">الطقس</button>
-        <button id="navN" onclick="switchTab('newsSec', 'navN')">الأخبار</button>
+        <button id="navW" class="active" onclick="switchTab('weatherSec', 'navW')"><span>⛅</span>الطقس</button>
+        <button id="navN" onclick="switchTab('newsSec', 'navN')"><span>📰</span>الأخبار</button>
     </div>
 
     <script>
         function login() {
-            const n = document.getElementById("name").value;
-            const c = document.getElementById("city").value;
-            const co = document.getElementById("country").value;
-            const a = document.getElementById("age").value;
+            const name = document.getElementById("nameInput").value.trim();
+            const city = document.getElementById("cityInput").value.trim();
+            const country = document.getElementById("countryInput").value.trim();
+            const age = document.getElementById("ageInput").value.trim();
 
-            if(!n || !c || !co || !a) {
-                alert("عبي كل الحقول أولاً!");
+            if (!name || !city || !country || !age) {
+                alert("⚠️ تنبيه: يجب تعبئة جميع الحقول (الاسم، المدينة، الدولة، العمر) للاستمرار!");
                 return;
             }
 
-            // إخفاء التسجيل وإظهار التطبيق والشريط السفلي
+            document.getElementById("welcomeName").textContent = name;
+
             document.getElementById("loginSec").classList.remove("active");
             document.getElementById("weatherSec").classList.add("active");
             document.getElementById("navBar").style.display = "flex";
@@ -75,27 +137,45 @@
 
         function getGPS() {
             if (!navigator.geolocation) {
-                alert("المتصفح لا يدعم الـ GPS");
+                alert("متصفحك لا يدعم الـ GPS");
                 return;
             }
-            document.getElementById("weatherResult").innerText = "جاري تحديد الموقع...";
+            document.getElementById("weatherResult").innerText = "📡 جاري تحديد الموقع عبر الأقمار الصناعية...";
+            
             navigator.geolocation.getCurrentPosition(pos => {
                 let lat = pos.coords.latitude;
                 let lon = pos.coords.longitude;
+                
                 fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`)
                 .then(res => res.json())
                 .then(data => {
                     let temp = data.current_weather.temperature;
-                    document.getElementById("weatherResult").innerText = `درجة الحرارة الآن: ${temp} °C`;
+                    let wind = data.current_weather.windspeed;
                     
-                    if(temp > 40) {
-                        document.getElementById("newsResult").innerText = "🔥 تحذير: حرارة عالية جداً وموجة حر خطيرة!";
+                    // إظهار الحرارة بحجم كبير
+                    const bigTempElem = document.getElementById("bigTempVal");
+                    bigTempElem.style.display = "block";
+                    bigTempElem.textContent = `${temp} °C`;
+
+                    document.getElementById("weatherResult").innerHTML = `💨 سرعة الرياح: <b>${wind} كم/س</b>`;
+                    
+                    const dangerAlert = document.getElementById("dangerAlert");
+
+                    if (temp > 40) {
+                        dangerAlert.style.display = "block";
+                        dangerAlert.textContent = `🔥 خطر شديد: الحرارة (${temp}°C) تجاوزت الـ 40 درجة! احذر من موجات الحر أو الحرائق.`;
+                    } else if (temp < 10) {
+                        dangerAlert.style.display = "block";
+                        dangerAlert.textContent = `❄️ خطر شديد: الحرارة (${temp}°C) أقل من 10 درجات! موجة برد قارس.`;
                     } else {
-                        document.getElementById("newsResult").innerText = "الأجواء مستقرة ولا توجد مخاطر حالياً.";
+                        dangerAlert.style.display = "none";
                     }
+                })
+                .catch(() => {
+                    document.getElementById("weatherResult").innerText = "❌ حدث خطأ أثناء جلب بيانات الطقس.";
                 });
             }, () => {
-                document.getElementById("weatherResult").innerText = "فشل تحديد الموقع.";
+                document.getElementById("weatherResult").innerText = "❌ فشل تحديد الموقع، تأكد من منح إذن الـ GPS للمتصفح.";
             });
         }
     </script>
