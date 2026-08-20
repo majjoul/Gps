@@ -175,6 +175,22 @@
     <script>
         let currentLang = 'ar';
 
+        // التحقق من وجود بيانات مخزنة مسبقاً عند فتح الصفحة
+        window.onload = function() {
+            const savedName = localStorage.getItem('userName');
+            if (savedName) {
+                document.getElementById("welcomeName").textContent = savedName;
+                document.getElementById("accName").textContent = savedName;
+                document.getElementById("accCity").textContent = localStorage.getItem('userCity');
+                document.getElementById("accCountry").textContent = localStorage.getItem('userCountry');
+                document.getElementById("accAge").textContent = localStorage.getItem('userAge');
+
+                document.getElementById("loginSec").classList.remove("active");
+                document.getElementById("weatherSec").classList.add("active");
+                document.getElementById("navBar").style.display = "flex";
+            }
+        };
+
         function login() {
             const name = document.getElementById("nameInput").value.trim();
             const city = document.getElementById("cityInput").value.trim();
@@ -185,6 +201,12 @@
                 alert(currentLang === 'ar' ? "⚠️ تنبيه: يجب تعبئة جميع الحقول للاستمرار!" : "⚠️ Warning: Please fill in all fields!");
                 return;
             }
+
+            // حفظ البيانات في ذاكرة المتصفح بشكل دائم
+            localStorage.setItem('userName', name);
+            localStorage.setItem('userCity', city);
+            localStorage.setItem('userCountry', country);
+            localStorage.setItem('userAge', age);
 
             document.getElementById("welcomeName").textContent = name;
             document.getElementById("accName").textContent = name;
@@ -198,6 +220,9 @@
         }
 
         function logout() {
+            // مسح البيانات المحفوظة عند تسجيل الخروج
+            localStorage.clear();
+            
             document.getElementById("nameInput").value = "";
             document.getElementById("cityInput").value = "";
             document.getElementById("countryInput").value = "";
@@ -205,6 +230,7 @@
             
             document.getElementById("navBar").style.display = "none";
             switchTab('loginSec', 'navW');
+            location.reload();
         }
 
         function switchTab(secId, btnId) {
