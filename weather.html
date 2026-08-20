@@ -3,7 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title id="pageTitle">منظومة الطقس والمخاطر</title>
+    <title id="pageTitle">تطبيق الطقس v1</title>
+    
+    <!-- وسوم تحسين محركات البحث (SEO) بالاسم الجديد -->
+    <meta name="description" content="تطبيق الطقس v1 - تطبيق طقس ومخاطر متقدم يوفر حالة الطقس المباشرة والأخبار العالمية وحساب شخصي مخصص.">
+    <meta name="keywords" content="تطبيق الطقس v1, تطبيق طقس, حالة الطقس, طقس اليوم, Weather App">
+    <meta name="author" content="Youssef">
+
     <style>
         * { box-sizing: border-box; }
         body { font-family: Arial, sans-serif; background: #ffffff; color: #000000; margin: 0; padding: 20px; padding-bottom: 90px; transition: 0.3s; }
@@ -44,7 +50,7 @@
 </head>
 <body>
 
-    <div id="appTitleHeader" class="subtitle" style="font-size: 22px; font-weight: bold; margin-top: 10px; text-align: center;">منظومة الطقس والمخاطر</div>
+    <div id="appTitleHeader" class="subtitle" style="font-size: 22px; font-weight: bold; margin-top: 10px; text-align: center;">تطبيق الطقس v1</div>
 
     <!-- صندوق التحذير الخطير -->
     <div id="dangerAlert" class="alert-box">
@@ -97,7 +103,7 @@
         <p id="weatherStatus" style="text-align: center; margin-top: 15px;">اضغط الزر لجلب الطقس...</p>
     </div>
 
-    <!-- 3. الأخبار العالمية (تم إزالة الخيار الأول غير المطلوب) -->
+    <!-- 3. الأخبار العالمية -->
     <div id="newsSec" class="section box">
         <h2 id="lNewsTitle">الأخبار والتقارير العالمية الحية</h2>
         <p id="lNewsSub" style="font-size: 13px; margin-bottom: 15px;">آخر المستجدات الصحفية المناخية والبيئية:</p>
@@ -245,8 +251,8 @@
             if (lang === 'en') {
                 root.setAttribute('dir', 'ltr');
                 root.setAttribute('lang', 'en');
-                document.getElementById('pageTitle').textContent = "Weather & Risk System";
-                document.getElementById('appTitleHeader').textContent = "Weather & Risk System";
+                document.getElementById('pageTitle').textContent = "Weather App v1";
+                document.getElementById('appTitleHeader').textContent = "Weather App v1";
                 
                 document.getElementById('lLoginTitle').textContent = "Registration Required";
                 document.getElementById('lLoginSub').textContent = "Please fill in all fields to unlock the app:";
@@ -288,8 +294,8 @@
             } else {
                 root.setAttribute('dir', 'rtl');
                 root.setAttribute('lang', 'ar');
-                document.getElementById('pageTitle').textContent = "منظومة الطقس والمخاطر";
-                document.getElementById('appTitleHeader').textContent = "منظومة الطقس والمخاطر";
+                document.getElementById('pageTitle').textContent = "تطبيق الطقس v1";
+                document.getElementById('appTitleHeader').textContent = "تطبيق الطقس v1";
 
                 document.getElementById('lLoginTitle').textContent = "تسجيل البيانات للبدء";
                 document.getElementById('lLoginSub').textContent = "يجب تعبئة الحقول التالية لفتح التطبيق والشريط السفلي:";
