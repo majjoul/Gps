@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تطبيق الطقس الذكي التفاعلي</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            /* الخلفية الافتراضية الفخمة */
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #311042 100%);
+            background-attachment: fixed;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            transition: background 0.8s ease;
+        }
+
+        /* خلفية حالة البرد (ثلجية زرقاء) */
+        body.cold-theme {
+            background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #0284c7 100%);
+        }
+
+        /* خلفية حالة الحر (نارية صفراء محمرة) */
+        body.hot-theme {
+            background: linear-gradient(135deg, #450a0a 0%, #9a3412 50%, #b45309 100%);
+        }
+
+        .container {
+            width: 100%;
+            max-width: 420px;
+        }
+        .card {
+            background: rgba(30, 41, 59, 0.75);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            padding: 24px;
+            border-radius: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            text-align: center;
+            transition: background 0.5s ease;
+        }
+        h2 {
+            margin-top: 0;
+            font-size: 22px;
+            letter-spacing: 0.5px;
+        }
+        .temp-display {
+            font-size: 54px;
+            font-weight: 800;
+            margin: 15px 0;
+            background: linear-gradient(to bottom, #ffffff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin: 20px 0;
+        }
+        .detail-item {
+            background: rgba(15, 23, 42, 0.5);
+            padding: 12px;
+            border-radius: 14px;
+            font-size: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .detail-item span {
+            display: block;
+            font-weight: bold;
+            font-size: 16px;
+            margin-top: 5px;
+            color: #38bdf8;
+        }
+        .status-box {
+            font-size: 16px;
+            font-weight: 600;
+            padding: 16px;
+            border-radius: 16px;
+            margin-top: 15px;
+            line-height: 1.5;
+        }
+        .good { 
+            background: rgba(6, 95, 70, 0.6); 
+            border: 1px solid #10b981; 
+            color: #6ee7b7; 
+        }
+        .bad { 
+            background: rgba(127, 29, 29, 0.6); 
+            border: 1px solid #ef4444; 
+            color: #fca5a5; 
+        }
+        .forecast-grid {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 15px;
+        }
+        .forecast-day {
+            background: rgba(15, 23, 42, 0.5);
+            flex: 1;
+            padding: 14px 10px;
+            border-radius: 14px;
+            font-size: 13px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .forecast-day strong {
+            color: #38bdf8;
+            font-size: 14px;
+        }
+        #loading {
+            font-size: 16px;
+            color: #94a3b8;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="card">
+            <h2 id="card-title">✨ حالة الطقس الحالية</h2>
+            <div id="loading">جاري رصد موقعك الجغرافي وتحليل الطقس...</div>
+            <div id="weather-info" style="display: none;">
+                <h3 id="location-name" style="color: #cbd5e1; margin-bottom: 5px;">موقعك الحالي</h3>
+                <div class="temp-display" id="temp">-°C</div>
+                <p id="condition" style="color: #94a3b8; font-size: 15px; margin-bottom: 15px;">تحليل الأجواء</p>
+                
+                <div class="details-grid">
+                    <div class="detail-item">
+                        سرعة الرياح
+                        <span id="wind">- كم/س</span>
+                    </div>
+                    <div class="detail-item">
+                        حالة الشمس
+                        <span id="sun-status">مشمس ☀️</span>
+                    </div>
+                </div>
+
+                <div id="recommendation" class="status-box"></div>
+            </div>
+        </div>
+
+        <div class="card" id="forecast-card" style="display: none;">
+            <h2>📅 توقعات الأيام القادمة</h2>
+            <div class="forecast-grid" id="forecast-container"></div>
+        </div>
+    </div>
+
+    <script>
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(position => {
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+                getWeather(lat, lon);
+            }, () => {
+                document.getElementById('loading').innerText = "تعذر تحديد الموقع. يرجى السماح للـ GPS بالعمل من إعدادات المتصفح.";
+            });
+        } else {
+            document.getElementById('loading').innerText = "متصفحك لا يدعم خاصية تحديد الموقع.";
+        }
+
+        async function getWeather(lat, lon) {
+            try {
+                const response = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,is_day&daily=temperature_2m_max,temperature_2m_min&timezone=auto`);
+                const data = await response.json();
+
+                const currentTemp = data.current.temperature_2m;
+                const windSpeed = data.current.wind_speed_10m;
+                const isDay = data.current.is_day;
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('weather-info').style.display = 'block';
+                document.getElementById('forecast-card').style.display = 'block';
+
+                document.getElementById('temp').innerText = `${currentTemp}°C`;
+                document.getElementById('wind').innerText = `${windSpeed} كم/س`;
+                document.getElementById('sun-status').innerText = isDay ? "نشطة ☀️" : "غائبة 🌙";
+
+                const bodyElement = document.body;
+                const recBox = document.getElementById('recommendation');
+
+                // تغيير الخلفية وتحديث تقرير الخروج بناءً على الحرارة
+                if (currentTemp < 10) {
+                    bodyElement.className = "cold-theme";
+                    recBox.className = "status-box bad";
+                    recBox.innerText = "❄️ الجو بارد جداً وثلجي (أقل من 10°C) - غير صالح للخروج!";
+                    document.getElementById('card-title').innerText = "❄️ طقس بارد وثلجي";
+                } else if (currentTemp > 35) {
+                    bodyElement.className = "hot-theme";
+                    recBox.className = "status-box bad";
+                    recBox.innerText = "🔥 الحرارة عالية وساخنة جداً (أكثر من 35°C) - غير صالح للخروج!";
+                    document.getElementById('card-title').innerText = "🔥 طقس حار وساخن";
+                } else {
+                    bodyElement.className = ""; // الخلفية الفخمة الافتراضية
+                    recBox.className = "status-box good";
+                    recBox.innerText = "✅ الطقس معتدل ومثالي، الجو صالح جداً للخروج والاستمتاع!";
+                    document.getElementById('card-title').innerText = "✨ حالة الطقس الحالية";
+                }
+
+                // التوقعات للأيام القادمة
+                const forecastContainer = document.getElementById('forecast-container');
+                forecastContainer.innerHTML = '';
+                
+                for (let i = 1; i <= 2; i++) {
+                    const maxTemp = data.daily.temperature_2m_max[i];
+                    const minTemp = data.daily.temperature_2m_min[i];
+
+                    forecastContainer.innerHTML += `
+                        <div class="forecast-day">
+                            <strong>${i === 1 ? 'بكره' : 'بعد بكرا'}</strong><br><br>
+                            عظمى: ${maxTemp}°C<br>
+                            صغرى: ${minTemp}°C
+                        </div>
+                    `;
+                }
+
+            } catch (error) {
+                document.getElementById('loading').innerText = "حدث خطأ في الاتصال بسيرفر الطقس.";
+            }
+        }
+    </script>
+</body>
+</html>
+
