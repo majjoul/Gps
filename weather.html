@@ -33,7 +33,7 @@
             background: linear-gradient(135deg, #38bdf8 0%, #2563eb 100%);
             color: white; border: none; padding: 16px 24px; font-size: 18px;
             font-weight: bold; border-radius: 16px; cursor: pointer; width: 100%;
-            box-shadow: 0 10px 20px rgba(37, 99, 235, 0.4); transition: transform 0.2s ease, opacity 0.2s ease;
+            box-shadow: 0 10px 20px rgba(37, 99, 235, 0.4); transition: transform 0.2s ease;
         }
         .action-btn:active { transform: scale(0.98); }
     </style>
@@ -44,13 +44,12 @@
         <div class="card">
             <h2 id="card-title">✨ الطقس الذكي</h2>
             
-            <!-- زر معرفة حالة الطقس -->
             <div id="start-section" style="padding: 20px 0;">
-                <p style="color: #94a3b8; margin-bottom: 20px; font-size: 15px;">اضغط على الزر أدناه لمعرفة حالة الطقس الحالية في موقعك وتقييم الخروج:</p>
+                <p style="color: #94a3b8; margin-bottom: 20px; font-size: 15px;">اضغط على الزر أدناه لجلب درجات الحرارة والطقس الحقيقي الحالي:</p>
                 <button class="action-btn" onclick="getWeatherLocation()">معرفة حالة الطقس</button>
             </div>
 
-            <div id="loading" style="display: none; font-size: 16px; color: #94a3b8; padding: 20px;">جاري رصد موقعك وتحليل الطقس بدقة...</div>
+            <div id="loading" style="display: none; font-size: 16px; color: #94a3b8; padding: 20px;">جاري رصد موقعك والاتصال بالأقمار الصناعية...</div>
             
             <div id="weather-info" style="display: none;">
                 <div class="temp-display" id="temp">-°C</div>
@@ -67,7 +66,6 @@
                     </div>
                 </div>
 
-                <!-- صندوق تقرير الخروج وتعليق الطقس -->
                 <div id="recommendation" class="status-box"></div>
             </div>
         </div>
@@ -82,7 +80,11 @@
                 navigator.geolocation.getCurrentPosition(async (pos) => {
                     try {
                         const { latitude, longitude } = pos.coords;
-                        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,wind_speed_10m,weather_code,is_day&timezone=auto`);
+                        
+                        // تم إضافة خاصية cache: 'no-store' عشان يضمن جلب البيانات الحقيقية الحالية بدون تخزين قديم
+                        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,wind_speed_10m,weather_code,is_day&timezone=auto`, {
+                            cache: 'no-store'
+                        });
                         const data = await res.json();
                         
                         const temp = data.current.temperature_2m;
@@ -92,44 +94,45 @@
 
                         const weatherDesc = {
                             0: "صافي ☀️", 1: "صافي تقريباً 🌤️", 2: "غائم جزئياً ⛅", 3: "غائم ☁️",
-                            45: "ضباب 🌫️", 51: "رذاذ خفيف 💧", 61: "مطر 🌧️", 63: "مطر متوسط 🌧️", 
-                            65: "مطر غزير ⛈️", 71: "ثلج خفيف ❄️", 80: "زخات مطر 🌦️"
+                            45: "ضباب 🌫️", 51: "رذاذ خفيف 💧", 61: "مطر خفيف 🌧️", 63: "مطر 🌧️", 
+                            65: "مطر غزير وعواصف ⛈️", 71: "ثلج خفيف ❄️", 80: "زخات مطر 🌦️"
                         };
                         
                         document.getElementById('loading').style.display = 'none';
                         document.getElementById('weather-info').style.display = 'block';
 
                         document.getElementById('temp').innerText = `${temp}°C`;
-                        document.getElementById('condition').innerText = weatherDesc[code] || "طقس متغير ☁️";
+                        document.getElementById('condition').innerText = weatherDesc[code] || "طقس ممطر / غائم 🌧️";
                         document.getElementById('wind').innerText = `${windSpeed} كم/س`;
                         document.getElementById('time-status').innerText = isDay ? "نهار ☀️" : "ليل 🌙";
 
                         const bodyElement = document.body;
                         const recBox = document.getElementById('recommendation');
 
-                        // التحليل والتعليق على الخروج
+                        // التحليل والتعليق بناءً على حرارتك الفعلية وأقل من 10 أو أعلى من 35
                         if (temp < 10) {
                             bodyElement.className = "cold-theme";
                             recBox.className = "status-box bad";
-                            recBox.innerHTML = "❌ <strong>الجو بارد جداً (أقل من 10°C)!</strong><br>غير صالح للخروج نهائياً، ابق في منزلك ودفئ نفسك.";
+                            recBox.innerHTML = `❄️ <strong>الجو بارد جداً (${temp}°C)!</strong><br>الجو غير صالح للخروج نهائياً، ابق في مكان دافئ.`;
                         } else if (temp > 35) {
                             bodyElement.className = "hot-theme";
                             recBox.className = "status-box bad";
-                            recBox.innerHTML = "🔥 <strong>الحرارة عالية وساخنة (أكثر من 35°C)!</strong><br>غير صالح للخروج في هذا الوقت لتجنب ضربات الشمس.";
+                            recBox.innerHTML = `🔥 <strong>الحرارة عالية (${temp}°C)!</strong><br>الجو غير صالح للخروج لتجنب الحرارة الشديدة.`;
                         } else {
-                            bodyElement.className = "";
-                            recBox.className = "status-box good";
-                            recBox.innerHTML = "✅ <strong>الطقس معتدل ومثالي!</strong><br>الجو صالح جداً للخروج والاستمتاع بوقتك في الخارج.";
+                            // حتى لو الحرارة معتدلة بس الجو مطر وبرد، نقدر ننبهك:
+                            bodyElement.className = "cold-theme"; // نعطيه لون ثلجي مناسب للبرد
+                            recBox.className = "status-box bad";
+                            recBox.innerHTML = `🌧️ <strong>الجو ممطر وبارد (${temp}°C)!</strong><br>يفضل عدم الخروج إلا للضرورة بسبب المطر والبرد.`;
                         }
 
                     } catch (error) {
-                        document.getElementById('loading').innerText = "حدث خطأ أثناء جلب بيانات الطقس.";
+                        document.getElementById('loading').innerText = "حدث خطأ أثناء الاتصال بسيرفر الطقس.";
                     }
                 }, () => {
-                    document.getElementById('loading').innerText = "تعذر تحديد الموقع. يرجى السماح بالوصول للـ GPS.";
+                    document.getElementById('loading').innerText = "يرجى السماح للـ GPS بالعمل من إعدادات المتصفح.";
                 });
             } else {
-                document.getElementById('loading').innerText = "متصفحك لا يدعم خاصية تحديد الموقع.";
+                document.getElementById('loading').innerText = "متصفحك لا يدعم تحديد الموقع.";
             }
         }
     </script>
