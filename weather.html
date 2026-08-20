@@ -22,12 +22,9 @@
             border-radius: 24px; margin-bottom: 20px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
         }
         .city-comment {
-            font-size: 15px;
-            color: #38bdf8;
-            background: rgba(56, 189, 248, 0.1);
-            padding: 10px;
-            border-radius: 12px;
-            margin-bottom: 15px;
+            font-size: 15px; color: #38bdf8;
+            background: rgba(56, 189, 248, 0.1); padding: 10px;
+            border-radius: 12px; margin-bottom: 15px;
             border: 1px solid rgba(56, 189, 248, 0.2);
         }
         .temp-display { font-size: 54px; font-weight: 800; margin: 15px 0; }
@@ -65,7 +62,9 @@
                 <div id="city-comment" class="city-comment">جاري تحديد المدينة...</div>
 
                 <div class="temp-display" id="temp">-°C</div>
-                <p id="condition" style="color: #94a3b8; font-size: 16px; margin-bottom: 15px;"></p>
+                
+                <!-- الأيقونة وحالة الجو الكبيرة -->
+                <div id="condition-badge" style="display: inline-block; padding: 8px 16px; border-radius: 20px; font-size: 16px; font-weight: bold; margin-bottom: 15px; background: rgba(255,255,255,0.1);"></div>
                 
                 <div class="details-grid">
                     <div class="detail-item">
@@ -107,47 +106,65 @@
                         const isDay = data.current.is_day;
                         const windSpeed = data.current.wind_speed_10m;
 
-                        const weatherDesc = {
-                            0: "صافي ☀️", 1: "صافي تقريباً 🌤️", 2: "غائم جزئياً ⛅", 3: "غائم ☁️",
-                            45: "ضباب 🌫️", 51: "رذاذ خفيف 💧", 61: "مطر خفيف 🌧️", 63: "مطر 🌧️", 
-                            65: "مطر غزير وعواصف ⛈️", 71: "ثلج خفيف ❄️", 80: "زخات مطر 🌦️"
+                        // تعريف أوصاف الطقس والأيقونات الدقيقة
+                        const weatherMap = {
+                            0: { text: "مشمس ☀️", type: "clear" },
+                            1: { text: "مشمس جزئياً 🌤️", type: "clear" },
+                            2: { text: "غائم جزئياً ⛅", type: "cloudy" },
+                            3: { text: "غائم ☁️", type: "cloudy" },
+                            45: { text: "ضباب 🌫️", type: "fog" },
+                            51: { text: "رذاذ خفيف 💧", type: "rain" },
+                            61: { text: "ممطر 🌧️", type: "rain" },
+                            63: { text: "ممطر 🌧️", type: "rain" },
+                            65: { text: "مطر غزير 🌧️", type: "rain" },
+                            95: { text: "عواصف رعدية ⚡", type: "storm" },
+                            96: { text: "رعد ومطر ⛈️", type: "storm" }
                         };
                         
+                        const currentWeather = weatherMap[code] || { text: "متغير ☁️", type: "cloudy" };
+
                         document.getElementById('loading').style.display = 'none';
                         document.getElementById('weather-info').style.display = 'block';
 
                         document.getElementById('city-comment').innerHTML = `📍 أنت في <strong>${cityName}</strong>: الحرارة الحالية ${temp}°C`;
 
                         document.getElementById('temp').innerText = `${temp}°C`;
-                        document.getElementById('condition').innerText = weatherDesc[code] || "طقس متغير ☁️";
+                        
+                        // عرض أيقونة الحالة (مشمس، غائم، ممطر...)
+                        const badge = document.getElementById('condition-badge');
+                        badge.innerText = currentWeather.text;
+
                         document.getElementById('wind').innerText = `${windSpeed} كم/س`;
                         document.getElementById('time-status').innerText = isDay ? "نهار ☀️" : "ليل 🌙";
 
                         const bodyElement = document.body;
                         const recBox = document.getElementById('recommendation');
 
-                        // تطبيق القواعد المحددة بناءً على درجات الحرارة
-                        if (temp >= 20 && temp <= 28) {
+                        // التقييم الذكي يدمج حالة المطر والحرارة معاً بشكل منطقي
+                        if (currentWeather.type === 'rain' || currentWeather.type === 'storm') {
+                            bodyElement.className = "cold-theme";
+                            recBox.className = "status-box bad";
+                            recBox.innerHTML = `🌧️ <strong>الجو ممطر (${temp}°C)!</strong><br>حالة الطقس الحالية ${currentWeather.text}، يفضل عدم الخروج من المنزل والابتعاد عن البلل.`;
+                        } else if (temp >= 20 && temp <= 28) {
                             bodyElement.className = "";
                             recBox.className = "status-box good";
-                            recBox.innerHTML = `🌟 <strong>الجو مثالي ومريح!</strong><br>الجو رائع جداً وممتاز للأنشطة الخارجية والتنزه.`;
+                            recBox.innerHTML = `🌟 <strong>الجو مثالي ومريح (${temp}°C)!</strong><br>الجو رائع جداً وممتاز للأنشطة الخارجية والتنزه (${currentWeather.text}).`;
                         } else if (temp >= 15 && temp <= 19) {
                             bodyElement.className = "cold-theme";
                             recBox.className = "status-box neutral";
-                            recBox.innerHTML = `🧥 <strong>الجو منعش ويميل للبرودة!</strong><br>الجو جميل ونشط، لكن قد تحتاج تلبس جاكيت خفيف أو هودي خصوصاً لو فيه هواء.`;
+                            recBox.innerHTML = `🧥 <strong>الجو منعش ويميل للبرودة (${temp}°C)!</strong><br>الجو جميل ونشط، لكن قد تحتاج تلبس جاكيت خفيف أو هودي (${currentWeather.text}).`;
                         } else if (temp < 10) {
                             bodyElement.className = "cold-theme";
                             recBox.className = "status-box bad";
                             recBox.innerHTML = `❄️ <strong>برد قارس (${temp}°C)!</strong><br>ينصح بعدم الخروج من المنزل والتدفئة بشكل جيد.`;
                         } else if (temp > 35) {
-                            bodyElement.className = "hot-theme";
+                            bodyElement.className, bodyElement.className = "hot-theme";
                             recBox.className = "status-box bad";
-                            recBox.innerHTML = `🔥 <strong>حرارة عالية (${temp}°C)!</strong><br>الجو يصبح حاراً جداً، والخروج يعرضك للإرهاق أو ضربات الشمس، يفضل البقاء في مكان مكيف.`;
+                            recBox.innerHTML = `🔥 <strong>حرارة عالية (${temp}°C)!</strong><br>الجو حار جداً، والخروج يعرضك للإرهاق، يفضل البقاء في مكان مكيف.`;
                         } else {
-                            // درجات الحرارة بين 11-14 أو 29-35
                             bodyElement.className = "";
                             recBox.className = "status-box neutral";
-                            recBox.innerHTML = `🌡️ <strong>الجو مقبول (${temp}°C)!</strong><br>الطقس معتدل نسبياً، يمكنك الخروج مع أخذ الاحتياطات البسيطة.`;
+                            recBox.innerHTML = `🌡️ <strong>الجو مقبول (${temp}°C)!</strong><br>الطقس معتدل نسبياً (${currentWeather.text})، يمكنك الخروج بحذر.`;
                         }
 
                     } catch (error) {
