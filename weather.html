@@ -1,182 +1,699 @@
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>تطبيق الطقس الذكي</title>
-    <style>
-        * { box-sizing: border-box; }
-        body {
-            margin: 0; padding: 20px; font-family: 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #311042 100%);
-            background-attachment: fixed; color: #ffffff;
-            display: flex; flex-direction: column; align-items: center; min-height: 100vh;
-            transition: background 0.8s ease;
+const express = require("express");
+const axios = require("axios");
+const { Pool } = require("pg");
+const crypto = require("crypto");
+
+const app = express();
+app.use(express.json({ limit: "32kb" }));
+
+// =========================
+// إعدادات البيئة
+// =========================
+
+const {
+    BOT_TOKEN,
+    TELEGRAM_SECRET,
+    DATABASE_URL,
+    PUBLIC_URL,
+    PORT = 3000
+} = process.env;
+
+if (!BOT_TOKEN) {
+    console.error("❌ BOT_TOKEN غير موجود");
+    process.exit(1);
+}
+
+if (!TELEGRAM_SECRET) {
+    console.error("❌ TELEGRAM_SECRET غير موجود");
+    process.exit(1);
+}
+
+if (!DATABASE_URL) {
+    console.error("❌ DATABASE_URL غير موجود");
+    process.exit(1);
+}
+
+if (!PUBLIC_URL) {
+    console.error("❌ PUBLIC_URL غير موجود");
+    process.exit(1);
+}
+
+// =========================
+// PostgreSQL
+// =========================
+
+const pool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: {
+        rejectUnauthorized: false
+    },
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000
+});
+
+// =========================
+// أدوات قاعدة البيانات
+// =========================
+
+async function initDB() {
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            token_hash TEXT NOT NULL,
+            chat_id TEXT UNIQUE NOT NULL,
+            lat DOUBLE PRECISION,
+            lon DOUBLE PRECISION,
+            city_name TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    `);
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS user_alerts (
+            user_id TEXT NOT NULL,
+            quake_id TEXT NOT NULL,
+            sent_at TIMESTAMPTZ DEFAULT NOW(),
+            PRIMARY KEY (user_id, quake_id)
+        )
+    `);
+
+    await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_users_location
+        ON users(lat, lon)
+    `);
+
+    await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_alerts_sent_at
+        ON user_alerts(sent_at)
+    `);
+
+    console.log("✅ قاعدة البيانات جاهزة");
+}
+
+// =========================
+// تشفير التوكن
+// =========================
+
+function hashToken(token) {
+    return crypto
+        .createHash("sha256")
+        .update(token)
+        .digest("hex");
+}
+
+function generateToken() {
+    return crypto.randomBytes(32).toString("hex");
+}
+
+// =========================
+// المسافة بين نقطتين
+// =========================
+
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+
+    const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(lat1 * Math.PI / 180) *
+        Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) ** 2;
+
+    return R * 2 * Math.atan2(
+        Math.sqrt(a),
+        Math.sqrt(1 - a)
+    );
+}
+
+// =========================
+// Telegram
+// =========================
+
+async function sendTelegram(chatId, text) {
+    try {
+        const response = await axios.post(
+            `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
+            {
+                chat_id: chatId,
+                text
+            },
+            {
+                timeout: 10000
+            }
+        );
+
+        return response.data?.ok === true;
+
+    } catch (error) {
+        console.error(
+            "❌ Telegram:",
+            error.response?.data || error.message
+        );
+
+        return false;
+    }
+}
+
+// =========================
+// Webhook Telegram
+// =========================
+
+app.post("/api/telegram-webhook", async (req, res) => {
+
+    const secret =
+        req.headers["x-telegram-bot-api-secret-token"];
+
+    if (secret !== TELEGRAM_SECRET) {
+        return res.status(403).json({
+            error: "Unauthorized"
+        });
+    }
+
+    try {
+        const update = req.body;
+
+        if (
+            !update.message ||
+            typeof update.message.text !== "string"
+        ) {
+            return res.sendStatus(200);
         }
-        body.cold-theme { background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #0284c7 100%); }
-        body.hot-theme { background: linear-gradient(135deg, #450a0a 0%, #9a3412 50%, #b45309 100%); }
-        .container { width: 100%; max-width: 420px; text-align: center; }
-        .card {
-            background: rgba(30, 41, 59, 0.75); backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.12); padding: 24px;
-            border-radius: 24px; margin-bottom: 20px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+
+        const text = update.message.text.trim();
+
+        if (!text.startsWith("/start")) {
+            return res.sendStatus(200);
         }
-        .city-comment {
-            font-size: 15px; color: #38bdf8;
-            background: rgba(56, 189, 248, 0.1); padding: 10px;
-            border-radius: 12px; margin-bottom: 15px;
-            border: 1px solid rgba(56, 189, 248, 0.2);
+
+        const chatId = String(update.message.chat.id);
+
+        // هل المستخدم موجود؟
+        const existing = await pool.query(
+            `SELECT id, token_hash
+             FROM users
+             WHERE chat_id = $1`,
+            [chatId]
+        );
+
+        let userId;
+        let plainToken;
+
+        if (existing.rows.length > 0) {
+
+            userId = existing.rows[0].id;
+
+            // لا نرسل التوكن القديم لأنه مخزن كـ hash.
+            plainToken = generateToken();
+
+            await pool.query(
+                `UPDATE users
+                 SET token_hash = $1,
+                     updated_at = NOW()
+                 WHERE id = $2`,
+                [
+                    hashToken(plainToken),
+                    userId
+                ]
+            );
+
+        } else {
+
+            userId =
+                "user_" +
+                crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+
+            plainToken = generateToken();
+
+            await pool.query(
+                `INSERT INTO users
+                (id, token_hash, chat_id, lat, lon, city_name)
+                VALUES ($1, $2, $3, NULL, NULL, $4)`,
+                [
+                    userId,
+                    hashToken(plainToken),
+                    chatId,
+                    "غير محدد"
+                ]
+            );
         }
-        .temp-display { font-size: 54px; font-weight: 800; margin: 15px 0; }
-        .status-box { font-size: 16px; font-weight: 600; padding: 16px; border-radius: 16px; margin-top: 20px; line-height: 1.6; }
-        .good { background: rgba(6, 95, 70, 0.6); border: 1px solid #10b981; color: #6ee7b7; }
-        .bad { background: rgba(127, 29, 29, 0.6); border: 1px solid #ef4444; color: #fca5a5; }
-        .neutral { background: rgba(202, 138, 4, 0.6); border: 1px solid #eab308; color: #fef08a; }
-        .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 20px 0; }
-        .detail-item { background: rgba(15, 23, 42, 0.5); padding: 12px; border-radius: 14px; font-size: 14px; }
-        .detail-item span { display: block; font-weight: bold; font-size: 16px; margin-top: 5px; color: #38bdf8; }
-        
-        .action-btn {
-            background: linear-gradient(135deg, #38bdf8 0%, #2563eb 100%);
-            color: white; border: none; padding: 16px 24px; font-size: 18px;
-            font-weight: bold; border-radius: 16px; cursor: pointer; width: 100%;
-            box-shadow: 0 10px 20px rgba(37, 99, 235, 0.4); transition: transform 0.2s ease;
-        }
-        .action-btn:active { transform: scale(0.98); }
-    </style>
-</head>
-<body>
 
-    <div class="container">
-        <div class="card">
-            <h2 id="card-title">✨ الطقس الذكي</h2>
-            
-            <div id="start-section" style="padding: 20px 0;">
-                <p style="color: #94a3b8; margin-bottom: 20px; font-size: 15px;">اضغط على الزر أدناه لمعرفة حالة الطقس والتقييم الذكي:</p>
-                <button class="action-btn" onclick="getWeatherLocation()">معرفة حالة الطقس</button>
-            </div>
+        await sendTelegram(
+            chatId,
+            `✅ تم إنشاء بيانات الربط
 
-            <div id="loading" style="display: none; font-size: 16px; color: #94a3b8; padding: 20px;">جاري رصد موقعك وجلب اسم المدينة...</div>
-            
-            <div id="weather-info" style="display: none;">
-                <div id="city-comment" class="city-comment">جاري تحديد المدينة...</div>
+UserID:
+${userId}
 
-                <div class="temp-display" id="temp">-°C</div>
-                
-                <!-- الأيقونة وحالة الجو الكبيرة -->
-                <div id="condition-badge" style="display: inline-block; padding: 8px 16px; border-radius: 20px; font-size: 16px; font-weight: bold; margin-bottom: 15px; background: rgba(255,255,255,0.1);"></div>
-                
-                <div class="details-grid">
-                    <div class="detail-item">
-                        سرعة الرياح
-                        <span id="wind">- كم/س</span>
-                    </div>
-                    <div class="detail-item">
-                        حالة الوقت
-                        <span id="time-status">-</span>
-                    </div>
-                </div>
+Token:
+${plainToken}
 
-                <div id="recommendation" class="status-box"></div>
-            </div>
-        </div>
-    </div>
+⚠️ لا تشارك الـ Token مع أي شخص.`
+        );
 
-    <script>
-        function getWeatherLocation() {
-            document.getElementById('start-section').style.display = 'none';
-            document.getElementById('loading').style.display = 'block';
+        return res.sendStatus(200);
 
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(async (pos) => {
-                    try {
-                        const { latitude, longitude } = pos.coords;
-                        
-                        const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=ar`);
-                        const geoData = await geoRes.json();
-                        const cityName = geoData.address.city || geoData.address.town || geoData.address.state || "مدينتك";
+    } catch (error) {
 
-                        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,wind_speed_10m,weather_code,is_day&timezone=auto`, {
-                            cache: 'no-store'
-                        });
-                        const data = await res.json();
-                        
-                        const temp = data.current.temperature_2m;
-                        const code = data.current.weather_code;
-                        const isDay = data.current.is_day;
-                        const windSpeed = data.current.wind_speed_10m;
+        console.error(
+            "❌ Webhook Error:",
+            error.message
+        );
 
-                        // تعريف أوصاف الطقس والأيقونات الدقيقة
-                        const weatherMap = {
-                            0: { text: "مشمس ☀️", type: "clear" },
-                            1: { text: "مشمس جزئياً 🌤️", type: "clear" },
-                            2: { text: "غائم جزئياً ⛅", type: "cloudy" },
-                            3: { text: "غائم ☁️", type: "cloudy" },
-                            45: { text: "ضباب 🌫️", type: "fog" },
-                            51: { text: "رذاذ خفيف 💧", type: "rain" },
-                            61: { text: "ممطر 🌧️", type: "rain" },
-                            63: { text: "ممطر 🌧️", type: "rain" },
-                            65: { text: "مطر غزير 🌧️", type: "rain" },
-                            95: { text: "عواصف رعدية ⚡", type: "storm" },
-                            96: { text: "رعد ومطر ⛈️", type: "storm" }
-                        };
-                        
-                        const currentWeather = weatherMap[code] || { text: "متغير ☁️", type: "cloudy" };
+        return res.sendStatus(200);
+    }
+});
 
-                        document.getElementById('loading').style.display = 'none';
-                        document.getElementById('weather-info').style.display = 'block';
+// =========================
+// Rate Limiting بسيط
+// =========================
 
-                        document.getElementById('city-comment').innerHTML = `📍 أنت في <strong>${cityName}</strong>: الحرارة الحالية ${temp}°C`;
+const rateLimit = new Map();
 
-                        document.getElementById('temp').innerText = `${temp}°C`;
-                        
-                        // عرض أيقونة الحالة (مشمس، غائم، ممطر...)
-                        const badge = document.getElementById('condition-badge');
-                        badge.innerText = currentWeather.text;
+function checkRateLimit(key) {
 
-                        document.getElementById('wind').innerText = `${windSpeed} كم/س`;
-                        document.getElementById('time-status').innerText = isDay ? "نهار ☀️" : "ليل 🌙";
+    const now = Date.now();
+    const last = rateLimit.get(key) || 0;
 
-                        const bodyElement = document.body;
-                        const recBox = document.getElementById('recommendation');
+    // طلب واحد كل 10 ثوانٍ
+    if (now - last < 10000) {
+        return false;
+    }
 
-                        // التقييم الذكي يدمج حالة المطر والحرارة معاً بشكل منطقي
-                        if (currentWeather.type === 'rain' || currentWeather.type === 'storm') {
-                            bodyElement.className = "cold-theme";
-                            recBox.className = "status-box bad";
-                            recBox.innerHTML = `🌧️ <strong>الجو ممطر (${temp}°C)!</strong><br>حالة الطقس الحالية ${currentWeather.text}، يفضل عدم الخروج من المنزل والابتعاد عن البلل.`;
-                        } else if (temp >= 20 && temp <= 28) {
-                            bodyElement.className = "";
-                            recBox.className = "status-box good";
-                            recBox.innerHTML = `🌟 <strong>الجو مثالي ومريح (${temp}°C)!</strong><br>الجو رائع جداً وممتاز للأنشطة الخارجية والتنزه (${currentWeather.text}).`;
-                        } else if (temp >= 15 && temp <= 19) {
-                            bodyElement.className = "cold-theme";
-                            recBox.className = "status-box neutral";
-                            recBox.innerHTML = `🧥 <strong>الجو منعش ويميل للبرودة (${temp}°C)!</strong><br>الجو جميل ونشط، لكن قد تحتاج تلبس جاكيت خفيف أو هودي (${currentWeather.text}).`;
-                        } else if (temp < 10) {
-                            bodyElement.className = "cold-theme";
-                            recBox.className = "status-box bad";
-                            recBox.innerHTML = `❄️ <strong>برد قارس (${temp}°C)!</strong><br>ينصح بعدم الخروج من المنزل والتدفئة بشكل جيد.`;
-                        } else if (temp > 35) {
-                            bodyElement.className, bodyElement.className = "hot-theme";
-                            recBox.className = "status-box bad";
-                            recBox.innerHTML = `🔥 <strong>حرارة عالية (${temp}°C)!</strong><br>الجو حار جداً، والخروج يعرضك للإرهاق، يفضل البقاء في مكان مكيف.`;
-                        } else {
-                            bodyElement.className = "";
-                            recBox.className = "status-box neutral";
-                            recBox.innerHTML = `🌡️ <strong>الجو مقبول (${temp}°C)!</strong><br>الطقس معتدل نسبياً (${currentWeather.text})، يمكنك الخروج بحذر.`;
-                        }
+    rateLimit.set(key, now);
 
-                    } catch (error) {
-                        document.getElementById('loading').innerText = "حدث خطأ أثناء جلب بيانات الموقع أو الطقس.";
-                    }
-                }, () => {
-                    document.getElementById('loading').innerText = "يرجى السماح للـ GPS بالعمل من إعدادات المتصفح.";
-                });
-            } else {
-                document.getElementById('loading').innerText = "متصفحك لا يدعم تحديد الموقع.";
+    // تنظيف الذاكرة
+    if (rateLimit.size > 10000) {
+        for (const [k, time] of rateLimit) {
+            if (now - time > 60000) {
+                rateLimit.delete(k);
             }
         }
-    </script>
-</body>
-</html>
+    }
+
+    return true;
+}
+
+// =========================
+// تحديث الموقع
+// =========================
+
+app.post("/api/update-location", async (req, res) => {
+
+    const {
+        userId,
+        token,
+        lat,
+        lon,
+        cityName
+    } = req.body;
+
+    if (!userId || !token) {
+        return res.status(400).json({
+            message: "بيانات المصادقة ناقصة"
+        });
+    }
+
+    if (!checkRateLimit(userId)) {
+        return res.status(429).json({
+            message: "طلبات كثيرة، حاول لاحقاً"
+        });
+    }
+
+    if (
+        typeof lat !== "number" ||
+        typeof lon !== "number" ||
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lon) ||
+        lat < -90 ||
+        lat > 90 ||
+        lon < -180 ||
+        lon > 180
+    ) {
+        return res.status(400).json({
+            message: "إحداثيات غير صالحة"
+        });
+    }
+
+    try {
+
+        const result = await pool.query(
+            `UPDATE users
+             SET lat = $1,
+                 lon = $2,
+                 city_name = $3,
+                 updated_at = NOW()
+             WHERE id = $4
+             AND token_hash = $5`,
+            [
+                lat,
+                lon,
+                typeof cityName === "string"
+                    ? cityName.slice(0, 100)
+                    : "موقعك الحالي",
+                userId,
+                hashToken(token)
+            ]
+        );
+
+        if (result.rowCount === 0) {
+            return res.status(403).json({
+                message: "UserID أو Token غير صالح"
+            });
+        }
+
+        return res.json({
+            success: true
+        });
+
+    } catch (error) {
+
+        console.error(
+            "❌ Location Error:",
+            error.message
+        );
+
+        return res.status(500).json({
+            message: "خطأ داخلي"
+        });
+    }
+});
+
+// =========================
+// جلب الزلازل
+// =========================
+
+async function fetchRecentEarthquakes() {
+
+    const startTime =
+        new Date(Date.now() - 2 * 60 * 60 * 1000)
+            .toISOString();
+
+    try {
+
+        const response = await axios.get(
+            "https://earthquake.usgs.gov/fdsnws/event/1/query",
+            {
+                params: {
+                    format: "geojson",
+                    eventtype: "earthquake",
+                    minmagnitude: 4.0,
+                    starttime: startTime,
+                    orderby: "time",
+                    limit: 200
+                },
+                timeout: 15000
+            }
+        );
+
+        return response.data?.features || [];
+
+    } catch (error) {
+
+        console.error(
+            "❌ USGS Error:",
+            error.message
+        );
+
+        return [];
+    }
+}
+
+// =========================
+// تحديد خطورة الزلزال
+// =========================
+
+function isDangerousEarthquake(magnitude, distance) {
+
+    // قوي جداً وقريب نسبياً
+    if (magnitude >= 6.0 && distance <= 500) {
+        return true;
+    }
+
+    // قوي وقريب
+    if (magnitude >= 5.0 && distance <= 300) {
+        return true;
+    }
+
+    // متوسط لكن قريب جداً
+    if (magnitude >= 4.0 && distance <= 50) {
+        return true;
+    }
+
+    return false;
+}
+
+// =========================
+// معالجة المستخدمين
+// =========================
+
+async function processEarthquakes() {
+
+    const earthquakes =
+        await fetchRecentEarthquakes();
+
+    if (earthquakes.length === 0) {
+        return;
+    }
+
+    const usersResult = await pool.query(`
+        SELECT id, chat_id, lat, lon, city_name
+        FROM users
+        WHERE lat IS NOT NULL
+        AND lon IS NOT NULL
+    `);
+
+    const users = usersResult.rows;
+
+    for (const user of users) {
+
+        for (const quake of earthquakes) {
+
+            if (
+                !quake.id ||
+                !quake.geometry ||
+                !quake.geometry.coordinates
+            ) {
+                continue;
+            }
+
+            const magnitude =
+                Number(quake.properties?.mag);
+
+            const qLon =
+                Number(quake.geometry.coordinates[0]);
+
+            const qLat =
+                Number(quake.geometry.coordinates[1]);
+
+            const quakeTime =
+                Number(quake.properties?.time);
+
+            if (
+                !Number.isFinite(magnitude) ||
+                !Number.isFinite(qLat) ||
+                !Number.isFinite(qLon)
+            ) {
+                continue;
+            }
+
+            const distance =
+                calculateDistance(
+                    Number(user.lat),
+                    Number(user.lon),
+                    qLat,
+                    qLon
+                );
+
+            if (
+                !isDangerousEarthquake(
+                    magnitude,
+                    distance
+                )
+            ) {
+                continue;
+            }
+
+            // محاولة حجز التنبيه ذرياً
+            const claim = await pool.query(
+                `INSERT INTO user_alerts
+                (user_id, quake_id)
+                VALUES ($1, $2)
+                ON CONFLICT (user_id, quake_id)
+                DO NOTHING`,
+                [
+                    user.id,
+                    quake.id
+                ]
+            );
+
+            // إذا لم ننجح بالحجز، سيرفر آخر سبقنا
+            if (claim.rowCount === 0) {
+                continue;
+            }
+
+            const place =
+                quake.properties?.place ||
+                "موقع غير معروف";
+
+            const message =
+`🚨 تنبيه زلزالي
+
+🌋 القوة: ${magnitude.toFixed(1)} ريختر
+📍 الموقع: ${place}
+📏 المسافة التقريبية: ${Math.round(distance)} كم
+🏙️ منطقتك: ${user.city_name || "غير محددة"}
+
+⚠️ هذا تنبيه مبني على بيانات زلزالية مرصودة، وليس ضماناً لوصول إنذار قبل الاهتزاز.`;
+
+            const sent =
+                await sendTelegram(
+                    user.chat_id,
+                    message
+                );
+
+            // إذا فشل Telegram نحذف الحجز
+            // حتى يمكن إعادة المحاولة في الدورة القادمة
+            if (!sent) {
+
+                await pool.query(
+                    `DELETE FROM user_alerts
+                     WHERE user_id = $1
+                     AND quake_id = $2`,
+                    [
+                        user.id,
+                        quake.id
+                    ]
+                );
+            }
+        }
+    }
+}
+
+// =========================
+// تنظيف التنبيهات القديمة
+// =========================
+
+async function cleanupOldAlerts() {
+
+    try {
+
+        await pool.query(`
+            DELETE FROM user_alerts
+            WHERE sent_at < NOW() - INTERVAL '7 days'
+        `);
+
+    } catch (error) {
+
+        console.error(
+            "❌ Cleanup Error:",
+            error.message
+        );
+    }
+}
+
+// =========================
+// مراقب واحد فقط لكل Instance
+// =========================
+
+let checking = false;
+
+async function monitoringLoop() {
+
+    if (checking) {
+        return;
+    }
+
+    checking = true;
+
+    try {
+
+        await processEarthquakes();
+
+    } catch (error) {
+
+        console.error(
+            "❌ Monitoring Error:",
+            error.message
+        );
+
+    } finally {
+
+        checking = false;
+    }
+}
+
+// =========================
+// Health Check
+// =========================
+
+app.get("/ping", (req, res) => {
+
+    res.json({
+        status: "online",
+        time: new Date().toISOString()
+    });
+});
+
+// =========================
+// بدء السيرفر
+// =========================
+
+async function startServer() {
+
+    await initDB();
+
+    app.listen(PORT, () => {
+
+        console.log(
+            `🚀 Server running on port ${PORT}`
+        );
+
+    });
+
+    // أول فحص بعد تشغيل السيرفر
+    await monitoringLoop();
+
+    // ثم كل دقيقة
+    setInterval(
+        monitoringLoop,
+        60000
+    );
+
+    // تنظيف يومي
+    setInterval(
+        cleanupOldAlerts,
+        24 * 60 * 60 * 1000
+    );
+}
+
+startServer().catch(error => {
+
+    console.error(
+        "❌ Server startup failed:",
+        error
+    );
+
+    process.exit(1);
+});
+
+// =========================
+// إغلاق آمن
+// =========================
+
+async function shutdown() {
+
+    console.log("🛑 إيقاف السيرفر...");
+
+    try {
+        await pool.end();
+    } finally {
+        process.exit(0);
+    }
+}
+
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
