@@ -6,16 +6,11 @@
     <title>تطبيق الطقس والمخاطر الشامل</title>
     <style>
         * { box-sizing: border-box; }
-        body { margin: 0; font-family: Arial, sans-serif; background: #0f172a; color: white; }
-        .container { width: min(700px, 92%); margin: 30px auto; }
+        body { margin: 0; font-family: Arial, sans-serif; background: #0f172a; color: white; padding-bottom: 80px; }
+        .container { width: min(700px, 92%); margin: 25px auto; }
         
-        h1 { text-align: center; font-size: 34px; margin-bottom: 5px; }
-        .subtitle { text-align: center; color: #94a3b8; margin-bottom: 25px; font-size: 14px; }
-
-        /* نظام التبويبات (الصفحات داخل نفس الشاشة) */
-        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
-        .tab-btn { flex: 1; padding: 12px; border: none; border-radius: 10px; background: #1e293b; color: #94a3b8; font-weight: bold; cursor: pointer; transition: 0.3s; }
-        .tab-btn.active { background: #2563eb; color: white; }
+        h1 { text-align: center; font-size: 32px; margin-bottom: 5px; }
+        .subtitle { text-align: center; color: #94a3b8; margin-bottom: 20px; font-size: 14px; }
 
         .page-section { display: none; }
         .page-section.active { display: block; }
@@ -39,6 +34,36 @@
         .news-card { background: #0f172a; padding: 15px; border-radius: 10px; margin-bottom: 12px; border-right: 4px solid #f59e0b; }
         .news-card h3 { margin: 0 0 5px 0; font-size: 16px; color: #f59e0b; }
         .news-card p { margin: 0; color: #94a3b8; font-size: 14px; }
+
+        /* الشريط السفلي (Bottom Navigation Bar) */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: #1e293b;
+            border-top: 1px solid #334155;
+            display: flex;
+            justify-content: space-around;
+            padding: 10px 0;
+            z-index: 1000;
+            box-shadow: 0 -5px 20px rgba(0,0,0,0.3);
+        }
+        .nav-item {
+            background: none;
+            border: none;
+            color: #94a3b8;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            transition: 0.3s;
+        }
+        .nav-item span { font-size: 20px; }
+        .nav-item.active { color: #2563eb; }
     </style>
 </head>
 <body>
@@ -46,13 +71,6 @@
     <div class="container">
         <h1>منظومة الطقس والمخاطر</h1>
         <div class="subtitle">تتبع فوري، تنبيهات الطقس، والأخبار العاجلة</div>
-
-        <!-- شريط التنقل بين الأقسام (التبويبات) -->
-        <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('loginSection', this)">👤 البداية</button>
-            <button class="tab-btn" onclick="switchTab('weatherSection', this)">⛅ الطقس والموقع</button>
-            <button class="tab-btn" onclick="switchTab('newsSection', this)">📰 الأخبار والمخاطر</button>
-        </div>
 
         <!-- صندوق التحذيرات الخطيرة العام -->
         <div id="dangerAlert" class="alert-box">
@@ -126,14 +144,27 @@
         </div>
     </div>
 
+    <!-- الشريط السفلي الثابت (Bottom Navigation Bar) -->
+    <div class="bottom-nav">
+        <button class="nav-item active" onclick="switchTab('loginSection', this)">
+            <span>👤</span> البداية
+        </button>
+        <button class="nav-item" onclick="switchTab('weatherSection', this)">
+            <span>⛅</span> الطقس
+        </button>
+        <button class="nav-item" onclick="switchTab('newsSection', this)">
+            <span>📰</span> الأخبار
+        </button>
+    </div>
+
     <script>
-        // التنقل بين الأقسام (التبويبات)
-        function switchTab(sectionId, btnElement) {
+        // دالة التنقل بين الأقسام والشريط السفلي
+        function switchTab(sectionId, navElement) {
             document.querySelectorAll('.page-section').forEach(sec => sec.classList.remove('active'));
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
             
             document.getElementById(sectionId).classList.add('active');
-            btnElement.classList.add('active');
+            navElement.classList.add('active');
         }
 
         function startApp() {
@@ -142,11 +173,10 @@
                 alert("الرجاء إدخال الاسم أولاً");
                 return;
             }
-            // الانتقال التلقائي لصفحة الطقس بعد التسجيل
-            switchTab('weatherSection', document.querySelectorAll('.tab-btn')[1]);
+            // الانتقال التلقائي لصفحة الطقس وزر الشريط السفلي
+            switchTab('weatherSection', document.querySelectorAll('.nav-item')[1]);
         }
 
-        // أزرار وعناصر الصفحة
         const gpsButton = document.getElementById("gpsButton");
         const cityNameInput = document.getElementById("cityNameInput");
         const cityNameVal = document.getElementById("cityNameVal");
@@ -232,7 +262,7 @@
             if (temp > 40) {
                 dangerAlert.style.display = "block";
                 dangerAlert.textContent = `🔥 تحذير خطر: درجة الحرارة مرتفعة جداً (${temp}°C)! انتبه لموجات الحر واحتمالية نشوب الحرائق.`;
-                fireAlertNews.textContent = `🚨 تحذير عاجل: تم رصد درجة حرارة مرتفعة للغاية (${temp}°C) في منطقتك الحالية، يوخى الحذر الشديد من خطر الحرائق!`;
+                fireAlertNews.textContent = `🚨 تحذير عاجل: تم رصد درجة حرارة مرتفعة للغاية (${temp}°C) في منطقتك الحالية، يرجى الحذر الشديد من خطر الحرائق!`;
             } else if (temp < 10) {
                 dangerAlert.style.display = "block";
                 dangerAlert.textContent = `❄️ تحذير خطر: درجة الحرارة منخفضة جداً (${temp}°C)! موجة برد قارس.`;
