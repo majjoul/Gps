@@ -2,8 +2,8 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale-user-scalable=no">
-    <title>تتبع الموقع الجغرافي</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تتبع الطقس والمخاطر البيئية</title>
     <style>
         * {
             box-sizing: border-box;
@@ -23,7 +23,7 @@
 
         h1 {
             text-align: center;
-            font-size: 42px;
+            font-size: 38px;
             margin-bottom: 5px;
         }
 
@@ -43,12 +43,13 @@
 
         .card h2 {
             margin-top: 0;
+            font-size: 20px;
         }
 
         input {
             width: 100%;
             padding: 14px;
-            margin-top: 12px;
+            margin-top: 10px;
             border: 1px solid #334155;
             border-radius: 10px;
             background: #0f172a;
@@ -73,178 +74,201 @@
             background: #1d4ed8;
         }
 
-        .status {
-            text-align: center;
-            margin-bottom: 0;
+        .alert-box {
+            background: #7f1d1d;
+            border: 1px solid #ef4444;
+            color: #fca5a5;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: none;
             font-weight: bold;
+            text-align: center;
         }
 
-        .location-box {
-            display: flex;
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
             gap: 15px;
         }
 
-        .location-box div {
-            flex: 1;
+        .info-item {
             background: #0f172a;
             padding: 15px;
             border-radius: 10px;
         }
 
-        .location-box span {
+        .info-item span {
             display: block;
             color: #94a3b8;
             font-size: 13px;
         }
 
-        .location-box strong {
+        .info-item strong {
             display: block;
             margin-top: 5px;
+            font-size: 18px;
         }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <h1>متابعة الموقع</h1>
-        <div class="subtitle">ربط الجهاز وإرسال الإحداثيات</div>
+        <h1>مراقبة الطقس والمخاطر</h1>
+        <div class="subtitle">تحديد الموقع، رصد الحرارة، والتحذيرات</div>
 
-        <!-- بطاقة بيانات الدخول -->
-        <div class="card">
-            <h2>بيانات المصادقة</h2>
-            <input type="text" id="userId" placeholder="أدخل UserID الخاص بك">
-            <input type="password" id="token" placeholder="أدخل Token الخاص بك">
-            <button id="connectButton">بدء الاتصال والتتبع</button>
+        <!-- صندوق التحذيرات الخطيرة -->
+        <div id="dangerAlert" class="alert-box">
+            ⚠️ تنبيه خطر: درجات الحرارة غير صالحة أو توجد موجة حر/برد شديدة!
         </div>
 
-        <!-- بطاقة الحالة -->
+        <!-- بطاقة إدخال المدينة أو استخدام الـ GPS -->
         <div class="card">
-            <h2>حالة الاتصال</h2>
-            <p class="status" id="status">🔴 غير متصل</p>
+            <h2>حدد موقعك</h2>
+            <button id="gpsButton" style="background: #059669;">📍 استخدم موقعي الحالي (GPS)</button>
+            <div style="text-align: center; margin: 10px 0; color: #94a3b8;">أو</div>
+            <input type="text" id="cityNameInput" placeholder="أدخل اسم المدينة (مثلاً: Riyadh, Cairo)">
+            <button id="searchButton">فحص الطقس للمدينة</button>
         </div>
 
-        <!-- بطاقة الإحداثيات -->
+        <!-- بطاقة معلومات الطقس -->
         <div class="card">
-            <h2>الإحداثيات الحالية</h2>
-            <div class="location-box">
-                <div>
-                    <span>خط العرض (Latitude)</span>
-                    <strong id="latitude">--</strong>
+            <h2>حالة الطقس والبيئة</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span>المدينة / الموقع</span>
+                    <strong id="cityNameVal">--</strong>
                 </div>
-                <div>
-                    <span>خط الطول (Longitude)</span>
-                    <strong id="longitude">--</strong>
+                <div class="info-item">
+                    <span>درجة الحرارة</span>
+                    <strong id="tempVal">--</strong>
+                </div>
+                <div class="info-item">
+                    <span>حالة الجو</span>
+                    <strong id="weatherVal">--</strong>
+                </div>
+                <div class="info-item">
+                    <span>سرعة الرياح</span>
+                    <strong id="windVal">--</strong>
                 </div>
             </div>
-            <p id="locationStatus" style="margin-top: 15px; color: #94a3b8; text-align: center;">في انتظار بدء الاتصال...</p>
+            <p id="statusMsg" style="margin-top: 15px; color: #94a3b8; text-align: center;">في انتظار اختيار الموقع...</p>
         </div>
     </div>
 
     <script>
-        const BACKEND_URL = "https://YOUR-BACKEND.onrender.com"; // ضع رابط السيرفر الخاص بك هنا
+        const gpsButton = document.getElementById("gpsButton");
+        const searchButton = document.getElementById("searchButton");
+        const cityNameInput = document.getElementById("cityNameInput");
+        
+        const cityNameVal = document.getElementById("cityNameVal");
+        const tempVal = document.getElementById("tempVal");
+        const weatherVal = document.getElementById("weatherVal");
+        const windVal = document.getElementById("windVal");
+        const statusMsg = document.getElementById("statusMsg");
+        const dangerAlert = document.getElementById("dangerAlert");
 
-        const userIdInput = document.getElementById("userId");
-        const tokenInput = document.getElementById("token");
-        const connectButton = document.getElementById("connectButton");
-        const statusElement = document.getElementById("status");
-        const latitudeElement = document.getElementById("latitude");
-        const longitudeElement = document.getElementById("longitude");
-        const locationStatus = document.getElementById("locationStatus");
-
-        let credentials = null;
-        let locationTimer = null;
-
-        connectButton.addEventListener("click", async () => {
-            const userId = userIdInput.value.trim();
-            const token = tokenInput.value.trim();
-
-            if (!userId || !token) {
-                statusElement.textContent = "❌ أدخل UserID و Token";
+        // زر الـ GPS
+        gpsButton.addEventListener("click", () => {
+            if (!navigator.geolocation) {
+                alert("متصفحك لا يدعم تحديد الموقع الجغرافي");
                 return;
             }
-
-            credentials = { userId, token };
-            statusElement.textContent = "🔄 جارٍ الحصول على موقعك...";
-            startLocationTracking();
+            statusMsg.textContent = "📡 جاري طلب إذن الموقع وتحديده...";
+            navigator.geolocation.getCurrentPosition(
+                position => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    fetchWeatherByCoords(lat, lon);
+                },
+                error => {
+                    statusMsg.textContent = "❌ رفضت إذن تحديد الموقع أو حدث خطأ";
+                },
+                { enableHighAccuracy: true }
+            );
         });
 
-        function startLocationTracking() {
-            if (!navigator.geolocation) {
-                locationStatus.textContent = "❌ متصفحك لا يدعم تحديد الموقع";
+        // زر البحث بالاسم
+        searchButton.addEventListener("click", () => {
+            const city = cityNameInput.value.trim();
+            if (!city) {
+                alert("الرجاء إدخال اسم المدينة");
                 return;
             }
+            fetchWeatherByCity(city);
+        });
 
-            navigator.geolocation.getCurrentPosition(sendLocation, handleLocationError, {
-                enableHighAccuracy: true,
-                timeout: 15000,
-                maximumAge: 30000
-            });
-
-            if (locationTimer) {
-                clearInterval(locationTimer);
+        // جلب الطقس بالإحداثيات
+        async function fetchWeatherByCoords(lat, lon) {
+            try {
+                statusMsg.textContent = "🔄 جاري جلب بيانات الطقس...";
+                // استخدام API مجاني للطقس (Open-Meteo) لا يتطلب مفتاح تشغيل
+                const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`);
+                const data = await res.json();
+                
+                if (data && data.current_weather) {
+                    updateUI(data.current_weather.temperature, data.current_weather.windspeed, `إحداثيات: ${lat.toFixed(2)}, ${lon.toFixed(2)}`, data.current_weather.weathercode);
+                } else {
+                    statusMsg.textContent = "❌ تعذر جلب بيانات الطقس";
+                }
+            } catch (e) {
+                statusMsg.textContent = "❌ خطأ في الاتصال بخدمة الطقس";
             }
-
-            locationTimer = setInterval(() => {
-                navigator.geolocation.getCurrentPosition(sendLocation, handleLocationError, {
-                    enableHighAccuracy: true,
-                    timeout: 15000,
-                    maximumAge: 30000
-                });
-            }, 60000);
         }
 
-        async function sendLocation(position) {
-            const lat = position.coords.latitude;
-            const lon = position.coords.longitude;
-
-            latitudeElement.textContent = lat.toFixed(6);
-            longitudeElement.textContent = lon.toFixed(6);
-            locationStatus.textContent = "📡 يتم إرسال موقعك للسيرفر...";
-
+        // جلب الطقس باسم المدينة
+        async function fetchWeatherByCity(cityName) {
             try {
-                const response = await fetch(`${BACKEND_URL}/api/update-location`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        userId: credentials.userId,
-                        token: credentials.token,
-                        lat,
-                        lon,
-                        cityName: "موقعك الحالي"
-                    })
-                });
+                statusMsg.textContent = "🔄 جاري البحث عن المدينة...";
+                // أولاً نحصل على إحداثيات المدينة من الاسم
+                const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityName)}&count=1`);
+                const geoData = await geoRes.json();
 
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.message || "حدث خطأ");
+                if (!geoData.results || geoData.results.length === 0) {
+                    statusMsg.textContent = "❌ لم يتم العثور على المدينة";
+                    return;
                 }
 
-                statusElement.textContent = "🟢 الجهاز متصل";
-                locationStatus.textContent = "✅ تم تحديث موقعك بنجاح";
+                const place = geoData.results[0];
+                fetchWeatherByCoords(place.latitude, place.longitude);
+                cityNameVal.textContent = `${place.name} (${place.country || ''})`;
 
-            } catch (error) {
-                console.error(error);
-                statusElement.textContent = "🔴 فشل الاتصال بالسيرفر";
-                locationStatus.textContent = "❌ تعذر تحديث الموقع";
+            } catch (e) {
+                statusMsg.textContent = "❌ خطأ في البحث عن المدينة";
             }
         }
 
-        function handleLocationError(error) {
-            switch (error.code) {
-                case error.PERMISSION_DENIED:
-                    locationStatus.textContent = "❌ لم تسمح للمتصفح بالوصول إلى موقعك";
-                    break;
-                case error.POSITION_UNAVAILABLE:
-                    locationStatus.textContent = "❌ الموقع غير متوفر";
-                    break;
-                case error.TIMEOUT:
-                    locationStatus.textContent = "⏱️ انتهت مهلة تحديد الموقع";
-                    break;
-                default:
-                    locationStatus.textContent = "❌ حدث خطأ في تحديد الموقع";
+        // تحديث الواجهة وفحص شروط الخطر (أقل من 10 أو أعلى من 40)
+        function updateUI(temp, wind, locationName, weatherCode) {
+            if (cityNameVal.textContent === "--" || cityNameVal.textContent.includes("إحداثيات")) {
+                cityNameVal.textContent = locationName;
             }
+            tempVal.textContent = `${temp} °C`;
+            windVal.textContent = `${wind} كم/س`;
+            weatherVal.textContent = getWeatherDescription(weatherCode);
+            statusMsg.textContent = "✅ تم تحديث بيانات الطقس بنجاح";
+
+            // فحص تنبيهات الخطر (أقل من 10 أو أعلى من 40)
+            if (temp > 40) {
+                dangerAlert.style.display = "block";
+                dangerAlert.textContent = `🔥 تحذير خطير: درجات الحرارة مرتفعة جداً (${temp}°C)! احذر من موجات الحر أو خطر الحرائق.`;
+            } else if (temp < 10) {
+                dangerAlert.style.display = "block";
+                dangerAlert.textContent = `❄️ تحذير خطر: درجات الحرارة منخفضة جداً (${temp}°C)! موجة برد قارس.`;
+            } else {
+                dangerAlert.style.display = "none";
+            }
+        }
+
+        // وصف حالة الطقس بناءً على كود الأقمار
+        function getWeatherDescription(code) {
+            if (code === 0) return "☀️ صحو / صافٍ";
+            if (code >= 1 && code <= 3) return "⛅ غائم جزئياً";
+            if (code >= 51 && code <= 67) return "🌧️ أمطار";
+            if (code >= 95) return "⛈️ عواصف رعدية";
+            return "☁️ غائم / متقلب";
         }
     </script>
 </body>
 </html>
+
