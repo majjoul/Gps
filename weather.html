@@ -21,10 +21,20 @@
             border: 1px solid rgba(255, 255, 255, 0.12); padding: 24px;
             border-radius: 24px; margin-bottom: 20px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
         }
+        .city-comment {
+            font-size: 15px;
+            color: #38bdf8;
+            background: rgba(56, 189, 248, 0.1);
+            padding: 10px;
+            border-radius: 12px;
+            margin-bottom: 15px;
+            border: 1px solid rgba(56, 189, 248, 0.2);
+        }
         .temp-display { font-size: 54px; font-weight: 800; margin: 15px 0; }
         .status-box { font-size: 16px; font-weight: 600; padding: 16px; border-radius: 16px; margin-top: 20px; line-height: 1.6; }
         .good { background: rgba(6, 95, 70, 0.6); border: 1px solid #10b981; color: #6ee7b7; }
         .bad { background: rgba(127, 29, 29, 0.6); border: 1px solid #ef4444; color: #fca5a5; }
+        .neutral { background: rgba(202, 138, 4, 0.6); border: 1px solid #eab308; color: #fef08a; }
         .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 20px 0; }
         .detail-item { background: rgba(15, 23, 42, 0.5); padding: 12px; border-radius: 14px; font-size: 14px; }
         .detail-item span { display: block; font-weight: bold; font-size: 16px; margin-top: 5px; color: #38bdf8; }
@@ -45,13 +55,15 @@
             <h2 id="card-title">✨ الطقس الذكي</h2>
             
             <div id="start-section" style="padding: 20px 0;">
-                <p style="color: #94a3b8; margin-bottom: 20px; font-size: 15px;">اضغط على الزر أدناه لجلب درجات الحرارة والطقس الحقيقي الحالي:</p>
+                <p style="color: #94a3b8; margin-bottom: 20px; font-size: 15px;">اضغط على الزر أدناه لمعرفة حالة الطقس والتقييم الذكي:</p>
                 <button class="action-btn" onclick="getWeatherLocation()">معرفة حالة الطقس</button>
             </div>
 
-            <div id="loading" style="display: none; font-size: 16px; color: #94a3b8; padding: 20px;">جاري رصد موقعك والاتصال بالأقمار الصناعية...</div>
+            <div id="loading" style="display: none; font-size: 16px; color: #94a3b8; padding: 20px;">جاري رصد موقعك وجلب اسم المدينة...</div>
             
             <div id="weather-info" style="display: none;">
+                <div id="city-comment" class="city-comment">جاري تحديد المدينة...</div>
+
                 <div class="temp-display" id="temp">-°C</div>
                 <p id="condition" style="color: #94a3b8; font-size: 16px; margin-bottom: 15px;"></p>
                 
@@ -81,7 +93,10 @@
                     try {
                         const { latitude, longitude } = pos.coords;
                         
-                        // تم إضافة خاصية cache: 'no-store' عشان يضمن جلب البيانات الحقيقية الحالية بدون تخزين قديم
+                        const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=ar`);
+                        const geoData = await geoRes.json();
+                        const cityName = geoData.address.city || geoData.address.town || geoData.address.state || "مدينتك";
+
                         const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,wind_speed_10m,weather_code,is_day&timezone=auto`, {
                             cache: 'no-store'
                         });
@@ -101,32 +116,42 @@
                         document.getElementById('loading').style.display = 'none';
                         document.getElementById('weather-info').style.display = 'block';
 
+                        document.getElementById('city-comment').innerHTML = `📍 أنت في <strong>${cityName}</strong>: الحرارة الحالية ${temp}°C`;
+
                         document.getElementById('temp').innerText = `${temp}°C`;
-                        document.getElementById('condition').innerText = weatherDesc[code] || "طقس ممطر / غائم 🌧️";
+                        document.getElementById('condition').innerText = weatherDesc[code] || "طقس متغير ☁️";
                         document.getElementById('wind').innerText = `${windSpeed} كم/س`;
                         document.getElementById('time-status').innerText = isDay ? "نهار ☀️" : "ليل 🌙";
 
                         const bodyElement = document.body;
                         const recBox = document.getElementById('recommendation');
 
-                        // التحليل والتعليق بناءً على حرارتك الفعلية وأقل من 10 أو أعلى من 35
-                        if (temp < 10) {
+                        // تطبيق القواعد المحددة بناءً على درجات الحرارة
+                        if (temp >= 20 && temp <= 28) {
+                            bodyElement.className = "";
+                            recBox.className = "status-box good";
+                            recBox.innerHTML = `🌟 <strong>الجو مثالي ومريح!</strong><br>الجو رائع جداً وممتاز للأنشطة الخارجية والتنزه.`;
+                        } else if (temp >= 15 && temp <= 19) {
+                            bodyElement.className = "cold-theme";
+                            recBox.className = "status-box neutral";
+                            recBox.innerHTML = `🧥 <strong>الجو منعش ويميل للبرودة!</strong><br>الجو جميل ونشط، لكن قد تحتاج تلبس جاكيت خفيف أو هودي خصوصاً لو فيه هواء.`;
+                        } else if (temp < 10) {
                             bodyElement.className = "cold-theme";
                             recBox.className = "status-box bad";
-                            recBox.innerHTML = `❄️ <strong>الجو بارد جداً (${temp}°C)!</strong><br>الجو غير صالح للخروج نهائياً، ابق في مكان دافئ.`;
+                            recBox.innerHTML = `❄️ <strong>برد قارس (${temp}°C)!</strong><br>ينصح بعدم الخروج من المنزل والتدفئة بشكل جيد.`;
                         } else if (temp > 35) {
                             bodyElement.className = "hot-theme";
                             recBox.className = "status-box bad";
-                            recBox.innerHTML = `🔥 <strong>الحرارة عالية (${temp}°C)!</strong><br>الجو غير صالح للخروج لتجنب الحرارة الشديدة.`;
+                            recBox.innerHTML = `🔥 <strong>حرارة عالية (${temp}°C)!</strong><br>الجو يصبح حاراً جداً، والخروج يعرضك للإرهاق أو ضربات الشمس، يفضل البقاء في مكان مكيف.`;
                         } else {
-                            // حتى لو الحرارة معتدلة بس الجو مطر وبرد، نقدر ننبهك:
-                            bodyElement.className = "cold-theme"; // نعطيه لون ثلجي مناسب للبرد
-                            recBox.className = "status-box bad";
-                            recBox.innerHTML = `🌧️ <strong>الجو ممطر وبارد (${temp}°C)!</strong><br>يفضل عدم الخروج إلا للضرورة بسبب المطر والبرد.`;
+                            // درجات الحرارة بين 11-14 أو 29-35
+                            bodyElement.className = "";
+                            recBox.className = "status-box neutral";
+                            recBox.innerHTML = `🌡️ <strong>الجو مقبول (${temp}°C)!</strong><br>الطقس معتدل نسبياً، يمكنك الخروج مع أخذ الاحتياطات البسيطة.`;
                         }
 
                     } catch (error) {
-                        document.getElementById('loading').innerText = "حدث خطأ أثناء الاتصال بسيرفر الطقس.";
+                        document.getElementById('loading').innerText = "حدث خطأ أثناء جلب بيانات الموقع أو الطقس.";
                     }
                 }, () => {
                     document.getElementById('loading').innerText = "يرجى السماح للـ GPS بالعمل من إعدادات المتصفح.";
