@@ -1,98 +1,250 @@
-const express = require('express');
-const axios = require('axios');
-const sqlite3 = require('sqlite3').verbose();
-const crypto = require('crypto');
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale-user-scalable=no">
+    <title>تتبع الموقع الجغرافي</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
 
-const app = express();
-app.use(express.json());
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #0f172a;
+            color: white;
+        }
 
-// إعدادات البيئة (يتم ضبطها في السيرفر مثل Render)
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const ADMIN_SECRET = process.env.ADMIN_SECRET; 
+        .container {
+            width: min(700px, 92%);
+            margin: 40px auto;
+        }
 
-// قاعدة بيانات المستخدمين
-const db = new sqlite3.Database('./app_data.db');
-db.run(`CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    token TEXT,
-    chatId TEXT,
-    lat REAL,
-    lon REAL,
-    cityName TEXT,
-    lastAlertState TEXT,
-    lastQuakeId TEXT
-)`);
+        h1 {
+            text-align: center;
+            font-size: 42px;
+            margin-bottom: 5px;
+        }
 
-// 1. تسجيل مستخدم جديد (محمي بكلمة سر)
-app.post('/api/register', (req, res) => {
-    const { chatId, secret } = req.body;
-    if (secret !== ADMIN_SECRET) return res.status(401).json({ message: "غير مصرح" });
-    
-    const userId = crypto.randomUUID();
-    const token = crypto.randomBytes(16).toString('hex');
-    
-    db.run("INSERT INTO users (id, token, chatId, lat, lon, cityName) VALUES (?,?,?,?,?,?)",
-        [userId, token, chatId, 0, 0, "غير محدد"], (err) => {
-            if (err) return res.status(500).json({ message: "خطأ في التسجيل" });
-            res.json({ userId, token });
+        .subtitle {
+            text-align: center;
+            color: #94a3b8;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: #1e293b;
+            border-radius: 18px;
+            padding: 22px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+        }
+
+        .card h2 {
+            margin-top: 0;
+        }
+
+        input {
+            width: 100%;
+            padding: 14px;
+            margin-top: 12px;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            background: #0f172a;
+            color: white;
+            font-size: 16px;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            margin-top: 15px;
+            border: none;
+            border-radius: 10px;
+            background: #2563eb;
+            color: white;
+            font-size: 17px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        .status {
+            text-align: center;
+            margin-bottom: 0;
+            font-weight: bold;
+        }
+
+        .location-box {
+            display: flex;
+            gap: 15px;
+        }
+
+        .location-box div {
+            flex: 1;
+            background: #0f172a;
+            padding: 15px;
+            border-radius: 10px;
+        }
+
+        .location-box span {
+            display: block;
+            color: #94a3b8;
+            font-size: 13px;
+        }
+
+        .location-box strong {
+            display: block;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>متابعة الموقع</h1>
+        <div class="subtitle">ربط الجهاز وإرسال الإحداثيات</div>
+
+        <!-- بطاقة بيانات الدخول -->
+        <div class="card">
+            <h2>بيانات المصادقة</h2>
+            <input type="text" id="userId" placeholder="أدخل UserID الخاص بك">
+            <input type="password" id="token" placeholder="أدخل Token الخاص بك">
+            <button id="connectButton">بدء الاتصال والتتبع</button>
+        </div>
+
+        <!-- بطاقة الحالة -->
+        <div class="card">
+            <h2>حالة الاتصال</h2>
+            <p class="status" id="status">🔴 غير متصل</p>
+        </div>
+
+        <!-- بطاقة الإحداثيات -->
+        <div class="card">
+            <h2>الإحداثيات الحالية</h2>
+            <div class="location-box">
+                <div>
+                    <span>خط العرض (Latitude)</span>
+                    <strong id="latitude">--</strong>
+                </div>
+                <div>
+                    <span>خط الطول (Longitude)</span>
+                    <strong id="longitude">--</strong>
+                </div>
+            </div>
+            <p id="locationStatus" style="margin-top: 15px; color: #94a3b8; text-align: center;">في انتظار بدء الاتصال...</p>
+        </div>
+    </div>
+
+    <script>
+        const BACKEND_URL = "https://YOUR-BACKEND.onrender.com"; // ضع رابط السيرفر الخاص بك هنا
+
+        const userIdInput = document.getElementById("userId");
+        const tokenInput = document.getElementById("token");
+        const connectButton = document.getElementById("connectButton");
+        const statusElement = document.getElementById("status");
+        const latitudeElement = document.getElementById("latitude");
+        const longitudeElement = document.getElementById("longitude");
+        const locationStatus = document.getElementById("locationStatus");
+
+        let credentials = null;
+        let locationTimer = null;
+
+        connectButton.addEventListener("click", async () => {
+            const userId = userIdInput.value.trim();
+            const token = tokenInput.value.trim();
+
+            if (!userId || !token) {
+                statusElement.textContent = "❌ أدخل UserID و Token";
+                return;
+            }
+
+            credentials = { userId, token };
+            statusElement.textContent = "🔄 جارٍ الحصول على موقعك...";
+            startLocationTracking();
         });
-});
 
-// 2. تحديث الموقع (محمي بالتوكن)
-app.post('/api/update-location', (req, res) => {
-    const { userId, token, lat, lon, cityName } = req.body;
-    db.get("SELECT * FROM users WHERE id = ? AND token = ?", [userId, token], (err, user) => {
-        if (!user) return res.status(403).json({ message: "توكن غير صالح" });
-        db.run("UPDATE users SET lat = ?, lon = ?, cityName = ? WHERE id = ?", [lat, lon, cityName, userId]);
-        res.json({ success: true });
-    });
-});
+        function startLocationTracking() {
+            if (!navigator.geolocation) {
+                locationStatus.textContent = "❌ متصفحك لا يدعم تحديد الموقع";
+                return;
+            }
 
-// 3. المراقبة التلقائية (تتم كل دقيقة)
-setInterval(async () => {
-    db.all("SELECT * FROM users", async (err, users) => {
-        if (err || !users) return;
+            navigator.geolocation.getCurrentPosition(sendLocation, handleLocationError, {
+                enableHighAccuracy: true,
+                timeout: 15000,
+                maximumAge: 30000
+            });
 
-        // جلب زلازل آخر ساعة فقط
-        const startTime = new Date(Date.now() - 3600000).toISOString();
-        const quakeRes = await axios.get(`https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minmagnitude=4.0&starttime=${startTime}`).catch(() => null);
-        if (!quakeRes || !quakeRes.data.features) return;
+            if (locationTimer) {
+                clearInterval(locationTimer);
+            }
 
-        for (let user of users) {
-            if (user.lat === 0) continue;
+            locationTimer = setInterval(() => {
+                navigator.geolocation.getCurrentPosition(sendLocation, handleLocationError, {
+                    enableHighAccuracy: true,
+                    timeout: 15000,
+                    maximumAge: 30000
+                });
+            }, 60000);
+        }
 
-            for (let quake of quakeRes.data.features) {
-                const mag = quake.properties.mag;
-                const dist = calculateDistance(user.lat, user.lon, quake.geometry.coordinates[1], quake.geometry.coordinates[0]);
-                
-                // منطق خطر ذكي: قوة عالية بمسافة كبيرة أو قوة متوسطة بمسافة قريبة جداً
-                const isDangerous = (mag >= 5.0 && dist < 300) || (mag >= 4.0 && dist < 50);
-                
-                if (isDangerous && user.lastQuakeId !== quake.id) {
-                    await safeSendTelegram(user.chatId, `🚨 إنذار زلزال: ${mag} ريختر على بعد ${Math.round(dist)} كم.`);
-                    db.run("UPDATE users SET lastQuakeId = ? WHERE id = ?", [quake.id, user.id]);
+        async function sendLocation(position) {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+
+            latitudeElement.textContent = lat.toFixed(6);
+            longitudeElement.textContent = lon.toFixed(6);
+            locationStatus.textContent = "📡 يتم إرسال موقعك للسيرفر...";
+
+            try {
+                const response = await fetch(`${BACKEND_URL}/api/update-location`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        userId: credentials.userId,
+                        token: credentials.token,
+                        lat,
+                        lon,
+                        cityName: "موقعك الحالي"
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || "حدث خطأ");
                 }
+
+                statusElement.textContent = "🟢 الجهاز متصل";
+                locationStatus.textContent = "✅ تم تحديث موقعك بنجاح";
+
+            } catch (error) {
+                console.error(error);
+                statusElement.textContent = "🔴 فشل الاتصال بالسيرفر";
+                locationStatus.textContent = "❌ تعذر تحديث الموقع";
             }
         }
-    });
-}, 60000);
 
-// دالة حساب المسافة
-function calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
-
-// 4. إرسال آمن (مع معالجة أخطاء)
-async function safeSendTelegram(chatId, text) {
-    try {
-        await axios.get(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage?chat_id=${chatId}&text=${encodeURIComponent(text)}`);
-    } catch (e) {
-        console.error("فشل إرسال التنبيه:", e.message);
-    }
-}
-
-app.listen(3000, () => console.log("System Online 🚀"));
+        function handleLocationError(error) {
+            switch (error.code) {
+                case error.PERMISSION_DENIED:
+                    locationStatus.textContent = "❌ لم تسمح للمتصفح بالوصول إلى موقعك";
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    locationStatus.textContent = "❌ الموقع غير متوفر";
+                    break;
+                case error.TIMEOUT:
+                    locationStatus.textContent = "⏱️ انتهت مهلة تحديد الموقع";
+                    break;
+                default:
+                    locationStatus.textContent = "❌ حدث خطأ في تحديد الموقع";
+            }
+        }
+    </script>
+</body>
+</html>
