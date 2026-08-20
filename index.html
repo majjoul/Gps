@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تطبيق الـ GPS الحقيقي</title>
+    <style>
+        body {
+            font-family: Tahoma, sans-serif;
+            background-color: #f4f4f9;
+            text-align: center;
+            padding: 50px;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            max-width: 400px;
+            margin: auto;
+        }
+        button {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+        button:hover {
+            background-color: #218838;
+        }
+        #result {
+            margin-top: 20px;
+            font-size: 18px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>تحديد الموقع الجغرافي (GPS)</h2>
+        <p>اضغط على الزر للسماح بالتطبيق بالوصول لموقعك الحقيقي:</p>
+        <button onclick="getLocation()">الحصول على الموقع</button>
+        <div id="result">جاري انتظار الطلب...</div>
+    </div>
+
+    <script>
+        function getLocation() {
+            const resultDiv = document.getElementById("result");
+            
+            if (navigator.geolocation) {
+                resultDiv.innerHTML = "جاري تحديد الموقع عبر الـ GPS...";
+                navigator.geolocation.getCurrentPosition(showPosition, showError, {
+                    enableHighAccuracy: true, // لطلب أعلى دقة متوفرة من الـ GPS
+                    timeout: 10000,
+                    maximumAge: 0
+                });
+            } else {
+                resultDiv.innerHTML = "متصفحك لا يدعم خاصية تحديد الموقع.";
+            }
+        }
+
+        function showPosition(position) {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            const accuracy = position.coords.accuracy;
+
+            document.getElementById("result").innerHTML = `
+                📍 <b>تم تحديد الموقع بنجاح!</b><br><br>
+                خط العرض (Latitude): ${lat}<br>
+                خط الطول (Longitude): ${lon}<br>
+                دقة التحديد: خلال ${Math.round(accuracy)} متر
+            `;
+        }
+
+        function showError(error) {
+            const resultDiv = document.getElementById("result");
+            switch(error.code) {
+                case error.PERMISSION_DENIED:
+                    resultDiv.innerHTML = "❌ تم رفض إذن الوصول إلى الموقع من قبل المستخدم.";
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    resultDiv.innerHTML = "❌ معلومات الموقع غير متوفرة حالياً.";
+                    break;
+                case error.TIMEOUT:
+                    resultDiv.innerHTML = "❌ انتهى الوقت المخصص لطلب الموقع.";
+                    break;
+                default:
+                    resultDiv.innerHTML = "❌ حدث خطأ غير معروف.";
+                    break;
+            }
+        }
+    </script>
+
+</body>
+</html>
+
