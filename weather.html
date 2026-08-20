@@ -97,16 +97,10 @@
         <p id="weatherStatus" style="text-align: center; margin-top: 15px;">اضغط الزر لجلب الطقس...</p>
     </div>
 
-    <!-- 3. الأخبار العالمية -->
+    <!-- 3. الأخبار العالمية (تم إزالة الخيار الأول غير المطلوب) -->
     <div id="newsSec" class="section box">
         <h2 id="lNewsTitle">الأخبار والتقارير العالمية الحية</h2>
         <p id="lNewsSub" style="font-size: 13px; margin-bottom: 15px;">آخر المستجدات الصحفية المناخية والبيئية:</p>
-        
-        <div class="news-item">
-            <h3 id="lNews1H">🌍 تقارير التغير المناخي وارتفاع درجات الحرارة</h3>
-            <p id="lNews1P">أحدث دراسات المنظمات البيئية العالمية حول تطورات الغلاف الجوي وموجات الحرارة القياسية.</p>
-            <a href="https://www.bbc.com/arabic/topics/c3wvrgywt8gt" target="_blank" class="news-link" id="lNews1A">اقرأ المقال الكامل عبر BBC عربي &larr;</a>
-        </div>
 
         <div class="news-item">
             <h3 id="lNews2H">🔥 تحليلات مخاطر حرائق الغابات وطرق الوقاية</h3>
@@ -144,7 +138,7 @@
         </div>
     </div>
 
-    <!-- 5. الإعدادات (اللون، اللغة، تسجيل الخروج) -->
+    <!-- 5. الإعدادات -->
     <div id="settingsSec" class="section box">
         <h2 id="lSetTitle">إعدادات التطبيق</h2>
         
@@ -198,7 +192,6 @@
         }
 
         function logout() {
-            // تفريغ الحقول وإخفاء الشريط السفلي والعودة لتسجيل الدخول
             document.getElementById("nameInput").value = "";
             document.getElementById("cityInput").value = "";
             document.getElementById("countryInput").value = "";
@@ -218,7 +211,6 @@
             }
         }
 
-        // تغيير مظهر وألوان التطبيق
         function changeTheme(theme) {
             const body = document.body;
             const boxes = document.querySelectorAll('.box');
@@ -239,7 +231,7 @@
                 inputs.forEach(i => { i.style.background = '#0f172a'; i.style.color = '#fff'; i.style.borderColor = '#334155'; });
                 buttons.forEach(bt => { bt.style.background = '#3b82f6'; bt.style.color = '#ffffff'; });
             } else if (theme === 'gray') {
-                body.style.background = '#e2e8f0'; body.style.background = '#1e293b'; body.style.color = '#f1f5f9';
+                body.style.background = '#1e293b'; body.style.color = '#f1f5f9';
                 boxes.forEach(b => { b.style.background = '#334155'; b.style.borderColor = '#475569'; b.style.color = '#f1f5f9'; });
                 nav.style.background = '#334155'; nav.style.borderColor = '#475569';
                 inputs.forEach(i => { i.style.background = '#1e293b'; i.style.color = '#fff'; i.style.borderColor = '#475569'; });
@@ -247,7 +239,6 @@
             }
         }
 
-        // تغيير لغة التطبيق (عربي / إنجليزي)
         function changeLang(lang) {
             currentLang = lang;
             const root = document.getElementById('htmlRoot');
@@ -257,7 +248,6 @@
                 document.getElementById('pageTitle').textContent = "Weather & Risk System";
                 document.getElementById('appTitleHeader').textContent = "Weather & Risk System";
                 
-                // ترجمة سريعة للنصوص الأساسية
                 document.getElementById('lLoginTitle').textContent = "Registration Required";
                 document.getElementById('lLoginSub').textContent = "Please fill in all fields to unlock the app:";
                 document.getElementById('lName').textContent = "Name:";
@@ -274,11 +264,9 @@
 
                 document.getElementById('lNewsTitle').textContent = "Live Global News";
                 document.getElementById('lNewsSub').textContent = "Latest climate and environmental reports:";
-                document.getElementById('lNews1H').textContent = "🌍 Climate Change Reports";
-                document.getElementById('lNews1P').textContent = "Global studies on atmospheric changes and heatwaves.";
-                document.getElementById('lNews1A').textContent = "Read full article on BBC →";
                 document.getElementById('lNews2H').textContent = "🔥 Wildfire Risks & Prevention";
                 document.getElementById('lNews2P').textContent = "Analysis of wildfire causes in dry regions.";
+                document.getElementById('lNews2A').textContent = "Read reports on Sky News →";
 
                 document.getElementById('lAccTitle').textContent = "User Account Profile";
                 document.getElementById('lUploadBtn').textContent = "Choose Profile Picture";
@@ -319,11 +307,9 @@
 
                 document.getElementById('lNewsTitle').textContent = "الأخبار والتقارير العالمية الحية";
                 document.getElementById('lNewsSub').textContent = "آخر المستجدات الصحفية المناخية والبيئية:";
-                document.getElementById('lNews1H').textContent = "🌍 تقارير التغير المناخي وارتفاع درجات الحرارة";
-                document.getElementById('lNews1P').textContent = "أحدث دراسات المنظمات البيئية العالمية حول تطورات الغلاف الجوي وموجات الحرارة القياسية.";
-                document.getElementById('lNews1A').textContent = "اقرأ المقال الكامل عبر BBC عربي ←";
                 document.getElementById('lNews2H').textContent = "🔥 تحليلات مخاطر حرائق الغابات وطرق الوقاية";
                 document.getElementById('lNews2P').textContent = "استعراض الأسباب الرئيسية لاندلاع الحرائق في المناطق الجافة وطرق التعامل معها.";
+                document.getElementById('lNews2A').textContent = "قراءة التقارير عبر سكاي نيوز ←";
 
                 document.getElementById('lAccTitle').textContent = "ملف الحساب الشخصي";
                 document.getElementById('lUploadBtn').textContent = "اختيار صورة شخصية";
