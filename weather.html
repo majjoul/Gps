@@ -159,6 +159,7 @@
         <select id="langSelect" onchange="changeLang(this.value)">
             <option value="ar">العربية (Arabic)</option>
             <option value="en">الإنجليزية (English)</option>
+            <option value="fr">الفرنسية (Français)</option>
         </select>
 
         <button onclick="logout()" style="background: #ef4444; margin-top: 25px;" id="lLogoutBtn">تسجيل الخروج</button>
@@ -198,7 +199,7 @@
             const age = document.getElementById("ageInput").value.trim();
 
             if (!name || !city || !country || !age) {
-                alert(currentLang === 'ar' ? "⚠️ تنبيه: يجب تعبئة جميع الحقول للاستمرار!" : "⚠️ Warning: Please fill in all fields!");
+                alert(currentLang === 'ar' ? "⚠️ تنبيه: يجب تعبئة جميع الحقول للاستمرار!" : currentLang === 'fr' ? "⚠️ Attention : Veuillez remplir tous les champs !" : "⚠️ Warning: Please fill in all fields!");
                 return;
             }
 
@@ -317,6 +318,49 @@
                 document.getElementById('nNews').textContent = "News";
                 document.getElementById('nAcc').textContent = "Account";
                 document.getElementById('nSet').textContent = "Settings";
+            } else if (lang === 'fr') {
+                root.setAttribute('dir', 'ltr');
+                root.setAttribute('lang', 'fr');
+                document.getElementById('pageTitle').textContent = "Application Météo v1";
+                document.getElementById('appTitleHeader').textContent = "Application Météo v1";
+                
+                document.getElementById('lLoginTitle').textContent = "Inscription requise";
+                document.getElementById('lLoginSub').textContent = "Veuillez remplir tous les champs pour déverrouiller l'application :";
+                document.getElementById('lName').textContent = "Nom :";
+                document.getElementById('lCity').textContent = "Ville :";
+                document.getElementById('lCountry').textContent = "Pays :";
+                document.getElementById('lAge').textContent = "Âge :";
+                document.getElementById('lLoginBtn').textContent = "Enregistrer et Entrer";
+
+                document.getElementById('lWeatherTitle').textContent = "Météo en direct";
+                document.getElementById('lGpsBtn').textContent = "📍 Obtenir ma position (GPS)";
+                document.getElementById('lWeatherState').textContent = "Condition :";
+                document.getElementById('lWindSpeed').textContent = "Vitesse du vent :";
+                document.getElementById('lCoords').textContent = "Coordonnées :";
+
+                document.getElementById('lNewsTitle').textContent = "Actualités mondiales en direct";
+                document.getElementById('lNewsSub').textContent = "Derniers rapports climatiques et environnementaux :";
+                document.getElementById('lNews2H').textContent = "🔥 Risques de feux de forêt et prévention";
+                document.getElementById('lNews2P').textContent = "Analyse des causes d'incendie dans les régions arides.";
+                document.getElementById('lNews2A').textContent = "Lire les rapports sur Sky News →";
+
+                document.getElementById('lAccTitle').textContent = "Profil du compte utilisateur";
+                document.getElementById('lUploadBtn').textContent = "Choisir une photo de profil";
+                document.getElementById('noPicText').textContent = "Aucune photo de profil ajoutée";
+                document.getElementById('lAccNameLbl').textContent = "Nom :";
+                document.getElementById('lAccCityLbl').textContent = "Ville :";
+                document.getElementById('lAccCountryLbl').textContent = "Pays :";
+                document.getElementById('lAccAgeLbl').textContent = "Âge :";
+
+                document.getElementById('lSetTitle').textContent = "Paramètres de l'application";
+                document.getElementById('lThemeLbl').textContent = "Couleur du thème :";
+                document.getElementById('lLangLbl').textContent = "Langue :";
+                document.getElementById('lLogoutBtn').textContent = "Se déconnecter";
+
+                document.getElementById('nWeather').textContent = "Météo";
+                document.getElementById('nNews').textContent = "Actualités";
+                document.getElementById('nAcc').textContent = "Compte";
+                document.getElementById('nSet').textContent = "Paramètres";
             } else {
                 root.setAttribute('dir', 'rtl');
                 root.setAttribute('lang', 'ar');
@@ -379,10 +423,10 @@
 
         function getGPS() {
             if (!navigator.geolocation) {
-                alert(currentLang === 'ar' ? "المتصفح لا يدعم الـ GPS" : "Browser does not support GPS");
+                alert(currentLang === 'ar' ? "المتصفح لا يدعم الـ GPS" : currentLang === 'fr' ? "Le navigateur ne supporte pas le GPS" : "Browser does not support GPS");
                 return;
             }
-            document.getElementById("weatherStatus").innerText = currentLang === 'ar' ? "📡 جاري تحديد الموقع عبر الأقمار الصناعية..." : "📡 Getting location via satellites...";
+            document.getElementById("weatherStatus").innerText = currentLang === 'ar' ? "📡 جاري تحديد الموقع عبر الأقمار الصناعية..." : currentLang === 'fr' ? "📡 Obtention de la position par satellite..." : "📡 Getting location via satellites...";
             
             navigator.geolocation.getCurrentPosition(pos => {
                 let lat = pos.coords.latitude;
@@ -406,29 +450,30 @@
                     const dangerAlert = document.getElementById("dangerAlert");
                     if (temp > 40) {
                         dangerAlert.style.display = "block";
-                        dangerAlert.textContent = currentLang === 'ar' ? `🔥 خطر شديد: الحرارة (${temp}°C) تجاوزت الـ 40 درجة!` : `🔥 Severe Danger: Temp (${temp}°C) exceeded 40C!`;
+                        dangerAlert.textContent = currentLang === 'ar' ? `🔥 خطر شديد: الحرارة (${temp}°C) تجاوزت الـ 40 درجة!` : currentLang === 'fr' ? `🔥 Danger extrême : La température (${temp}°C) dépasse 40°C !` : `🔥 Severe Danger: Temp (${temp}°C) exceeded 40C!`;
                     } else if (temp < 10) {
                         dangerAlert.style.display = "block";
-                        dangerAlert.textContent = currentLang === 'ar' ? `❄️ خطر شديد: الحرارة (${temp}°C) أقل من 10 درجات!` : `❄️ Severe Danger: Temp (${temp}°C) is below 10C!`;
+                        dangerAlert.textContent = currentLang === 'ar' ? `❄️ خطر شديد: الحرارة (${temp}°C) أقل من 10 درجات!` : currentLang === 'fr' ? `❄️ Danger extrême : La température (${temp}°C) est inférieure à 10°C !` : `❄️ Severe Danger: Temp (${temp}°C) is below 10C!`;
                     } else {
                         dangerAlert.style.display = "none";
                     }
                 })
                 .catch(() => {
-                    document.getElementById("weatherStatus").innerText = currentLang === 'ar' ? "❌ حدث خطأ أثناء جلب بيانات الطقس." : "❌ Error fetching weather data.";
+                    document.getElementById("weatherStatus").innerText = currentLang === 'ar' ? "❌ حدث خطأ أثناء جلب بيانات الطقس." : currentLang === 'fr' ? "❌ Erreur lors de la récupération des données météo." : "❌ Error fetching weather data.";
                 });
             }, () => {
-                document.getElementById("weatherStatus").innerText = currentLang === 'ar' ? "❌ فشل تحديد الموقع، تأكد من منح إذن الـ GPS." : "❌ Failed to get location, check GPS permission.";
+                document.getElementById("weatherStatus").innerText = currentLang === 'ar' ? "❌ فشل تحديد الموقع، تأكد من منح إذن الـ GPS." : currentLang === 'fr' ? "❌ Échec de la géolocalisation, vérifiez l'autorisation GPS." : "❌ Failed to get location, check GPS permission.";
             });
         }
 
         function getWeatherDesc(code) {
-            if (code === 0) return currentLang === 'ar' ? "☀️ صافٍ تماماً" : "☀️ Sunny";
-            if (code >= 1 && code <= 3) return currentLang === 'ar' ? "⛅ غائم جزئياً" : "⛅ Partly Cloudy";
-            if (code >= 51 && code <= 67) return currentLang === 'ar' ? "🌧️ أمطار" : "🌧️ Rainy";
-            if (code >= 95) return currentLang === 'ar' ? "⛈️ عواصف رعدية" : "⛈️ Thunderstorms";
-            return currentLang === 'ar' ? "☁️ غائم" : "☁️ Cloudy";
+            if (code === 0) return currentLang === 'ar' ? "☀️ صافٍ تماماً" : currentLang === 'fr' ? "☀️ Ensoleillé" : "☀️ Sunny";
+            if (code >= 1 && code <= 3) return currentLang === 'ar' ? "⛅ غائم جزئياً" : currentLang === 'fr' ? "⛅ Partiellement nuageux" : "⛅ Partly Cloudy";
+            if (code >= 51 && code <= 67) return currentLang === 'ar' ? "🌧️ أمطار" : currentLang === 'fr' ? "🌧️ Pluvieux" : "🌧️ Rainy";
+            if (code >= 95) return currentLang === 'ar' ? "⛈️ عواصف رعدية" : currentLang === 'fr' ? "⛈️ Orages" : "⛈️ Thunderstorms";
+            return currentLang === 'ar' ? "☁️ غائم" : currentLang === 'fr' ? "☁️ Nuageux" : "☁️ Cloudy";
         }
     </script>
 </body>
 </html>
+    <!-- 3. الأخبار 
