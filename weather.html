@@ -1,160 +1,83 @@
 const express = require('express');
 const axios = require('axios');
-const { Pool } = require('pg');
+const sqlite3 = require('sqlite3').verbose();
 const crypto = require('crypto');
 
 const app = express();
 app.use(express.json());
 
+// إعدادات البيئة (يتم ضبطها في السيرفر مثل Render)
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const TELEGRAM_SECRET = process.env.TELEGRAM_SECRET;
+const ADMIN_SECRET = process.env.ADMIN_SECRET; 
 
-if (!BOT_TOKEN) {
-    console.error("❌ خطأ: BOT_TOKEN غير موجود في متغيرات البيئة!");
-    process.exit(1);
-}
+// قاعدة بيانات المستخدمين
+const db = new sqlite3.Database('./app_data.db');
+db.run(`CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    token TEXT,
+    chatId TEXT,
+    lat REAL,
+    lon REAL,
+    cityName TEXT,
+    lastAlertState TEXT,
+    lastQuakeId TEXT
+)`);
 
-if (!TELEGRAM_SECRET) {
-    console.error("❌ خطأ أمني قاتل: يجب تعيين متغير البيئة TELEGRAM_SECRET بشكل صارم!");
-    process.exit(1);
-}
-
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+// 1. تسجيل مستخدم جديد (محمي بكلمة سر)
+app.post('/api/register', (req, res) => {
+    const { chatId, secret } = req.body;
+    if (secret !== ADMIN_SECRET) return res.status(401).json({ message: "غير مصرح" });
+    
+    const userId = crypto.randomUUID();
+    const token = crypto.randomBytes(16).toString('hex');
+    
+    db.run("INSERT INTO users (id, token, chatId, lat, lon, cityName) VALUES (?,?,?,?,?,?)",
+        [userId, token, chatId, 0, 0, "غير محدد"], (err) => {
+            if (err) return res.status(500).json({ message: "خطأ في التسجيل" });
+            res.json({ userId, token });
+        });
 });
 
-// تهيئة الجداول المركزية (جدول المستخدمين + جدول منفصل للتنبيهات المرصودة لكل مستخدم)
-async function initDB() {
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            token TEXT,
-            chatId TEXT UNIQUE,
-            lat REAL,
-            lon REAL,
-            cityName TEXT
-        )
-    `);
-
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS user_alerts (
-            user_id TEXT,
-            quake_id TEXT,
-            PRIMARY KEY (user_id, quake_id)
-        )
-    `);
-}
-initDB().catch(err => console.error("Database Init Error:", err));
-
-// 1. ويب هوك آمن تماماً للربط مع تيليجرام
-app.post('/api/telegram-webhook', async (req, res) => {
-    const secretHeader = req.headers['x-telegram-bot-api-secret-token'];
-    if (secretHeader !== TELEGRAM_SECRET) {
-        return res.status(403).json({ error: "Unauthorized Webhook Request" });
-    }
-
-    try {
-        const update = req.body;
-        if (update.message && update.message.text === '/start') {
-            const chatId = update.message.chat.id;
-            const userId = 'user_' + crypto.randomUUID().slice(0, 8);
-            const token = crypto.randomBytes(16).toString('hex');
-
-            await pool.query(
-                `INSERT INTO users (id, token, chatId, lat, lon, cityName) 
-                 VALUES ($1, $2, $3, 0, 0, 'غير محدد') 
-                 ON CONFLICT (chatId) DO NOTHING`,
-                [userId, token, chatId]
-            );
-
-            const result = await pool.query(`SELECT id, token FROM users WHERE chatId = $1`, [chatId]);
-            if (result.rows.length > 0) {
-                const user = result.rows[0];
-                await safeSendTelegram(chatId, `أهلاً بك!\nبيانات ربط موقعك بصفحة الويب:\n\nUserID: ${user.id}\nToken: ${user.token}`);
-            }
-        }
-    } catch (e) {
-        console.error("Webhook Error:", e.message);
-    }
-    res.sendStatus(200);
-});
-
-// 2. تحديث الموقع مع التحقق الجغرافي الصارم
-app.post('/api/update-location', async (req, res) => {
+// 2. تحديث الموقع (محمي بالتوكن)
+app.post('/api/update-location', (req, res) => {
     const { userId, token, lat, lon, cityName } = req.body;
-
-    if (typeof lat !== 'number' || typeof lon !== 'number' || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-        return res.status(400).json({ message: "إحداثيات جغرافية غير صالحة" });
-    }
-
-    try {
-        const userResult = await pool.query("SELECT * FROM users WHERE id = $1 AND token = $2", [userId, token]);
-        if (userResult.rows.length === 0) return res.status(403).json({ message: "غير مصرح أو بيانات غير صحيحة" });
-        
-        await pool.query(
-            "UPDATE users SET lat = $1, lon = $2, cityName = $3 WHERE id = $4", 
-            [lat, lon, cityName || "موقعك الحالي", userId]
-        );
+    db.get("SELECT * FROM users WHERE id = ? AND token = ?", [userId, token], (err, user) => {
+        if (!user) return res.status(403).json({ message: "توكن غير صالح" });
+        db.run("UPDATE users SET lat = ?, lon = ?, cityName = ? WHERE id = ?", [lat, lon, cityName, userId]);
         res.json({ success: true });
-    } catch (e) {
-        res.status(500).json({ message: "خطأ في السيرفر" });
-    }
+    });
 });
 
-// 3. محرك المراقبة الدوري مع قفل استشاري (Advisory Lock) لضمان عدم تكرار الفحص بين الـ Instances
+// 3. المراقبة التلقائية (تتم كل دقيقة)
 setInterval(async () => {
-    const client = await pool.connect();
-    try {
-        // محاولة أخذ قفل فريد برقم معنوي (مثلاً 998877) لضمان أن نسخة واحدة فقط من الـ Server تفحص في هذه الدقيقة
-        const lockResult = await client.query("SELECT pg_try_advisory_lock(998877)");
-        const acquired = lockResult.rows[0].pg_try_advisory_lock;
+    db.all("SELECT * FROM users", async (err, users) => {
+        if (err || !users) return;
 
-        if (!acquired) {
-            // نسخة أخرى تقوم بالفحص حالياً، نتخطى هذه الدورة لتوفير استهلاك الـ API
-            return;
-        }
-
-        const usersResult = await client.query("SELECT * FROM users");
-        const users = usersResult.rows;
-        if (!users || users.length === 0) return;
-
+        // جلب زلازل آخر ساعة فقط
         const startTime = new Date(Date.now() - 3600000).toISOString();
         const quakeRes = await axios.get(`https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minmagnitude=4.0&starttime=${startTime}`).catch(() => null);
-        
-        const recentQuakes = quakeRes?.data?.features || [];
+        if (!quakeRes || !quakeRes.data.features) return;
 
         for (let user of users) {
-            if (user.lat === 0 && user.lon === 0) continue;
+            if (user.lat === 0) continue;
 
-            for (let quake of recentQuakes) {
+            for (let quake of quakeRes.data.features) {
                 const mag = quake.properties.mag;
-                const quakeId = quake.id;
                 const dist = calculateDistance(user.lat, user.lon, quake.geometry.coordinates[1], quake.geometry.coordinates[0]);
-
-                const isMatch = (mag >= 5.0 && dist < 300) || (mag >= 4.0 && dist < 50);
-
-                if (isMatch) {
-                    const insertCheck = await client.query(
-                        `INSERT INTO user_alerts (user_id, quake_id) VALUES ($1, $2) ON CONFLICT (user_id, quake_id) DO NOTHING`,
-                        [user.id, quakeId]
-                    );
-
-                    if (insertCheck.rowCount > 0) {
-                        await safeSendTelegram(user.chatId, `⚠️ تنبيه زلزالي مرصود:\nالقوة: ${mag} ريختر\nالمسافة التقريبية: ${Math.round(dist)} كم عن (${user.cityName}).`);
-                    }
+                
+                // منطق خطر ذكي: قوة عالية بمسافة كبيرة أو قوة متوسطة بمسافة قريبة جداً
+                const isDangerous = (mag >= 5.0 && dist < 300) || (mag >= 4.0 && dist < 50);
+                
+                if (isDangerous && user.lastQuakeId !== quake.id) {
+                    await safeSendTelegram(user.chatId, `🚨 إنذار زلزال: ${mag} ريختر على بعد ${Math.round(dist)} كم.`);
+                    db.run("UPDATE users SET lastQuakeId = ? WHERE id = ?", [quake.id, user.id]);
                 }
             }
         }
-    } catch (e) {
-        console.error("خطأ في دورة المراقبة:", e.message);
-    } finally {
-        // تحرير القفل فور الانتهاء لتعمل الدورات القادمة بسلاسة
-        await client.query("SELECT pg_advisory_unlock(998877)").catch(() => {});
-        client.release();
-    }
+    });
 }, 60000);
 
+// دالة حساب المسافة
 function calculateDistance(lat1, lon1, lat2, lon2) {
     const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -163,15 +86,13 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+// 4. إرسال آمن (مع معالجة أخطاء)
 async function safeSendTelegram(chatId, text) {
     try {
-        await axios.get(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-            params: { chat_id: chatId, text: text }
-        });
-    } catch (error) {
-        console.error(`فشل إرسال تيليجرام للـ ID ${chatId}:`, error.message);
+        await axios.get(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage?chat_id=${chatId}&text=${encodeURIComponent(text)}`);
+    } catch (e) {
+        console.error("فشل إرسال التنبيه:", e.message);
     }
 }
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`السيرفر يعمل بأعلى كفاءة مع قفل الـ Instances على البورت ${PORT} 🚀`));
+app.listen(3000, () => console.log("System Online 🚀"));
