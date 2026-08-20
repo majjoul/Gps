@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>خريطة الموقع التفاعلية</title>
+    
+    <!-- استدعاء ملف الـ CSS الخاص بالمكتبة -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body { margin: 0; padding: 0; font-family: sans-serif; }
+        #header { padding: 15px; text-align: center; background: #1e1e1e; color: #fff; font-weight: bold; }
+        #map { width: 100%; height: calc(100vh - 50px); }
+    </style>
+</head>
+<body>
+
+    <div id="header">خريطة الموقع التفاعلية 🗺️</div>
+    <div id="map"></div>
+
+    <!-- استدعاء ملف الـ JS الخاص بالمكتبة -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script>
+        // إعداد الخريطة
+        var map = L.map('map').setView([24.7136, 46.6753], 6);
+
+        // إضافة خريطة الشوارع
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        // جلب موقع المستخدم
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(function(position) {
+                var lat = position.coords.latitude;
+                var lon = position.coords.longitude;
+
+                // تحريك الخريطة لموقعك
+                map.setView([lat, lon], 15);
+                L.marker([lat, lon]).addTo(map).bindPopup('أنت هنا 📍').openPopup();
+            }, function() {
+                alert("تعذر الوصول للموقع. تأكد من تفعيل الـ GPS.");
+            });
+        }
+    </script>
+</body>
+</html>
