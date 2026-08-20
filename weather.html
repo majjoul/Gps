@@ -1,699 +1,177 @@
-const express = require("express");
-const axios = require("axios");
-const { Pool } = require("pg");
-const crypto = require("crypto");
+const express = require('express');
+const axios = require('axios');
+const { Pool } = require('pg');
+const crypto = require('crypto');
 
 const app = express();
-app.use(express.json({ limit: "32kb" }));
+app.use(express.json());
 
-// =========================
-// إعدادات البيئة
-// =========================
-
-const {
-    BOT_TOKEN,
-    TELEGRAM_SECRET,
-    DATABASE_URL,
-    PUBLIC_URL,
-    PORT = 3000
-} = process.env;
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const TELEGRAM_SECRET = process.env.TELEGRAM_SECRET;
 
 if (!BOT_TOKEN) {
-    console.error("❌ BOT_TOKEN غير موجود");
+    console.error("❌ خطأ: BOT_TOKEN غير موجود في متغيرات البيئة!");
     process.exit(1);
 }
 
 if (!TELEGRAM_SECRET) {
-    console.error("❌ TELEGRAM_SECRET غير موجود");
+    console.error("❌ خطأ أمني قاتل: يجب تعيين متغير البيئة TELEGRAM_SECRET بشكل صارم!");
     process.exit(1);
 }
-
-if (!DATABASE_URL) {
-    console.error("❌ DATABASE_URL غير موجود");
-    process.exit(1);
-}
-
-if (!PUBLIC_URL) {
-    console.error("❌ PUBLIC_URL غير موجود");
-    process.exit(1);
-}
-
-// =========================
-// PostgreSQL
-// =========================
 
 const pool = new Pool({
-    connectionString: DATABASE_URL,
-    ssl: {
-        rejectUnauthorized: false
-    },
-    max: 10,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
 });
 
-// =========================
-// أدوات قاعدة البيانات
-// =========================
-
+// تهيئة الجداول المركزية (جدول المستخدمين + جدول منفصل للتنبيهات المرصودة لكل مستخدم)
 async function initDB() {
     await pool.query(`
         CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
-            token_hash TEXT NOT NULL,
-            chat_id TEXT UNIQUE NOT NULL,
-            lat DOUBLE PRECISION,
-            lon DOUBLE PRECISION,
-            city_name TEXT,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
+            token TEXT,
+            chatId TEXT UNIQUE,
+            lat REAL,
+            lon REAL,
+            cityName TEXT
         )
     `);
 
     await pool.query(`
         CREATE TABLE IF NOT EXISTS user_alerts (
-            user_id TEXT NOT NULL,
-            quake_id TEXT NOT NULL,
-            sent_at TIMESTAMPTZ DEFAULT NOW(),
+            user_id TEXT,
+            quake_id TEXT,
             PRIMARY KEY (user_id, quake_id)
         )
     `);
-
-    await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_users_location
-        ON users(lat, lon)
-    `);
-
-    await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_alerts_sent_at
-        ON user_alerts(sent_at)
-    `);
-
-    console.log("✅ قاعدة البيانات جاهزة");
 }
+initDB().catch(err => console.error("Database Init Error:", err));
 
-// =========================
-// تشفير التوكن
-// =========================
-
-function hashToken(token) {
-    return crypto
-        .createHash("sha256")
-        .update(token)
-        .digest("hex");
-}
-
-function generateToken() {
-    return crypto.randomBytes(32).toString("hex");
-}
-
-// =========================
-// المسافة بين نقطتين
-// =========================
-
-function calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371;
-
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-
-    const a =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos(lat1 * Math.PI / 180) *
-        Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLon / 2) ** 2;
-
-    return R * 2 * Math.atan2(
-        Math.sqrt(a),
-        Math.sqrt(1 - a)
-    );
-}
-
-// =========================
-// Telegram
-// =========================
-
-async function sendTelegram(chatId, text) {
-    try {
-        const response = await axios.post(
-            `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
-            {
-                chat_id: chatId,
-                text
-            },
-            {
-                timeout: 10000
-            }
-        );
-
-        return response.data?.ok === true;
-
-    } catch (error) {
-        console.error(
-            "❌ Telegram:",
-            error.response?.data || error.message
-        );
-
-        return false;
-    }
-}
-
-// =========================
-// Webhook Telegram
-// =========================
-
-app.post("/api/telegram-webhook", async (req, res) => {
-
-    const secret =
-        req.headers["x-telegram-bot-api-secret-token"];
-
-    if (secret !== TELEGRAM_SECRET) {
-        return res.status(403).json({
-            error: "Unauthorized"
-        });
+// 1. ويب هوك آمن تماماً للربط مع تيليجرام
+app.post('/api/telegram-webhook', async (req, res) => {
+    const secretHeader = req.headers['x-telegram-bot-api-secret-token'];
+    if (secretHeader !== TELEGRAM_SECRET) {
+        return res.status(403).json({ error: "Unauthorized Webhook Request" });
     }
 
     try {
         const update = req.body;
-
-        if (
-            !update.message ||
-            typeof update.message.text !== "string"
-        ) {
-            return res.sendStatus(200);
-        }
-
-        const text = update.message.text.trim();
-
-        if (!text.startsWith("/start")) {
-            return res.sendStatus(200);
-        }
-
-        const chatId = String(update.message.chat.id);
-
-        // هل المستخدم موجود؟
-        const existing = await pool.query(
-            `SELECT id, token_hash
-             FROM users
-             WHERE chat_id = $1`,
-            [chatId]
-        );
-
-        let userId;
-        let plainToken;
-
-        if (existing.rows.length > 0) {
-
-            userId = existing.rows[0].id;
-
-            // لا نرسل التوكن القديم لأنه مخزن كـ hash.
-            plainToken = generateToken();
+        if (update.message && update.message.text === '/start') {
+            const chatId = update.message.chat.id;
+            const userId = 'user_' + crypto.randomUUID().slice(0, 8);
+            const token = crypto.randomBytes(16).toString('hex');
 
             await pool.query(
-                `UPDATE users
-                 SET token_hash = $1,
-                     updated_at = NOW()
-                 WHERE id = $2`,
-                [
-                    hashToken(plainToken),
-                    userId
-                ]
+                `INSERT INTO users (id, token, chatId, lat, lon, cityName) 
+                 VALUES ($1, $2, $3, 0, 0, 'غير محدد') 
+                 ON CONFLICT (chatId) DO NOTHING`,
+                [userId, token, chatId]
             );
 
-        } else {
-
-            userId =
-                "user_" +
-                crypto.randomUUID().replace(/-/g, "").slice(0, 12);
-
-            plainToken = generateToken();
-
-            await pool.query(
-                `INSERT INTO users
-                (id, token_hash, chat_id, lat, lon, city_name)
-                VALUES ($1, $2, $3, NULL, NULL, $4)`,
-                [
-                    userId,
-                    hashToken(plainToken),
-                    chatId,
-                    "غير محدد"
-                ]
-            );
+            const result = await pool.query(`SELECT id, token FROM users WHERE chatId = $1`, [chatId]);
+            if (result.rows.length > 0) {
+                const user = result.rows[0];
+                await safeSendTelegram(chatId, `أهلاً بك!\nبيانات ربط موقعك بصفحة الويب:\n\nUserID: ${user.id}\nToken: ${user.token}`);
+            }
         }
+    } catch (e) {
+        console.error("Webhook Error:", e.message);
+    }
+    res.sendStatus(200);
+});
 
-        await sendTelegram(
-            chatId,
-            `✅ تم إنشاء بيانات الربط
+// 2. تحديث الموقع مع التحقق الجغرافي الصارم
+app.post('/api/update-location', async (req, res) => {
+    const { userId, token, lat, lon, cityName } = req.body;
 
-UserID:
-${userId}
+    if (typeof lat !== 'number' || typeof lon !== 'number' || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+        return res.status(400).json({ message: "إحداثيات جغرافية غير صالحة" });
+    }
 
-Token:
-${plainToken}
-
-⚠️ لا تشارك الـ Token مع أي شخص.`
+    try {
+        const userResult = await pool.query("SELECT * FROM users WHERE id = $1 AND token = $2", [userId, token]);
+        if (userResult.rows.length === 0) return res.status(403).json({ message: "غير مصرح أو بيانات غير صحيحة" });
+        
+        await pool.query(
+            "UPDATE users SET lat = $1, lon = $2, cityName = $3 WHERE id = $4", 
+            [lat, lon, cityName || "موقعك الحالي", userId]
         );
-
-        return res.sendStatus(200);
-
-    } catch (error) {
-
-        console.error(
-            "❌ Webhook Error:",
-            error.message
-        );
-
-        return res.sendStatus(200);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ message: "خطأ في السيرفر" });
     }
 });
 
-// =========================
-// Rate Limiting بسيط
-// =========================
-
-const rateLimit = new Map();
-
-function checkRateLimit(key) {
-
-    const now = Date.now();
-    const last = rateLimit.get(key) || 0;
-
-    // طلب واحد كل 10 ثوانٍ
-    if (now - last < 10000) {
-        return false;
-    }
-
-    rateLimit.set(key, now);
-
-    // تنظيف الذاكرة
-    if (rateLimit.size > 10000) {
-        for (const [k, time] of rateLimit) {
-            if (now - time > 60000) {
-                rateLimit.delete(k);
-            }
-        }
-    }
-
-    return true;
-}
-
-// =========================
-// تحديث الموقع
-// =========================
-
-app.post("/api/update-location", async (req, res) => {
-
-    const {
-        userId,
-        token,
-        lat,
-        lon,
-        cityName
-    } = req.body;
-
-    if (!userId || !token) {
-        return res.status(400).json({
-            message: "بيانات المصادقة ناقصة"
-        });
-    }
-
-    if (!checkRateLimit(userId)) {
-        return res.status(429).json({
-            message: "طلبات كثيرة، حاول لاحقاً"
-        });
-    }
-
-    if (
-        typeof lat !== "number" ||
-        typeof lon !== "number" ||
-        !Number.isFinite(lat) ||
-        !Number.isFinite(lon) ||
-        lat < -90 ||
-        lat > 90 ||
-        lon < -180 ||
-        lon > 180
-    ) {
-        return res.status(400).json({
-            message: "إحداثيات غير صالحة"
-        });
-    }
-
+// 3. محرك المراقبة الدوري مع قفل استشاري (Advisory Lock) لضمان عدم تكرار الفحص بين الـ Instances
+setInterval(async () => {
+    const client = await pool.connect();
     try {
+        // محاولة أخذ قفل فريد برقم معنوي (مثلاً 998877) لضمان أن نسخة واحدة فقط من الـ Server تفحص في هذه الدقيقة
+        const lockResult = await client.query("SELECT pg_try_advisory_lock(998877)");
+        const acquired = lockResult.rows[0].pg_try_advisory_lock;
 
-        const result = await pool.query(
-            `UPDATE users
-             SET lat = $1,
-                 lon = $2,
-                 city_name = $3,
-                 updated_at = NOW()
-             WHERE id = $4
-             AND token_hash = $5`,
-            [
-                lat,
-                lon,
-                typeof cityName === "string"
-                    ? cityName.slice(0, 100)
-                    : "موقعك الحالي",
-                userId,
-                hashToken(token)
-            ]
-        );
-
-        if (result.rowCount === 0) {
-            return res.status(403).json({
-                message: "UserID أو Token غير صالح"
-            });
+        if (!acquired) {
+            // نسخة أخرى تقوم بالفحص حالياً، نتخطى هذه الدورة لتوفير استهلاك الـ API
+            return;
         }
 
-        return res.json({
-            success: true
-        });
+        const usersResult = await client.query("SELECT * FROM users");
+        const users = usersResult.rows;
+        if (!users || users.length === 0) return;
 
-    } catch (error) {
+        const startTime = new Date(Date.now() - 3600000).toISOString();
+        const quakeRes = await axios.get(`https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minmagnitude=4.0&starttime=${startTime}`).catch(() => null);
+        
+        const recentQuakes = quakeRes?.data?.features || [];
 
-        console.error(
-            "❌ Location Error:",
-            error.message
-        );
+        for (let user of users) {
+            if (user.lat === 0 && user.lon === 0) continue;
 
-        return res.status(500).json({
-            message: "خطأ داخلي"
-        });
-    }
-});
+            for (let quake of recentQuakes) {
+                const mag = quake.properties.mag;
+                const quakeId = quake.id;
+                const dist = calculateDistance(user.lat, user.lon, quake.geometry.coordinates[1], quake.geometry.coordinates[0]);
 
-// =========================
-// جلب الزلازل
-// =========================
+                const isMatch = (mag >= 5.0 && dist < 300) || (mag >= 4.0 && dist < 50);
 
-async function fetchRecentEarthquakes() {
+                if (isMatch) {
+                    const insertCheck = await client.query(
+                        `INSERT INTO user_alerts (user_id, quake_id) VALUES ($1, $2) ON CONFLICT (user_id, quake_id) DO NOTHING`,
+                        [user.id, quakeId]
+                    );
 
-    const startTime =
-        new Date(Date.now() - 2 * 60 * 60 * 1000)
-            .toISOString();
-
-    try {
-
-        const response = await axios.get(
-            "https://earthquake.usgs.gov/fdsnws/event/1/query",
-            {
-                params: {
-                    format: "geojson",
-                    eventtype: "earthquake",
-                    minmagnitude: 4.0,
-                    starttime: startTime,
-                    orderby: "time",
-                    limit: 200
-                },
-                timeout: 15000
-            }
-        );
-
-        return response.data?.features || [];
-
-    } catch (error) {
-
-        console.error(
-            "❌ USGS Error:",
-            error.message
-        );
-
-        return [];
-    }
-}
-
-// =========================
-// تحديد خطورة الزلزال
-// =========================
-
-function isDangerousEarthquake(magnitude, distance) {
-
-    // قوي جداً وقريب نسبياً
-    if (magnitude >= 6.0 && distance <= 500) {
-        return true;
-    }
-
-    // قوي وقريب
-    if (magnitude >= 5.0 && distance <= 300) {
-        return true;
-    }
-
-    // متوسط لكن قريب جداً
-    if (magnitude >= 4.0 && distance <= 50) {
-        return true;
-    }
-
-    return false;
-}
-
-// =========================
-// معالجة المستخدمين
-// =========================
-
-async function processEarthquakes() {
-
-    const earthquakes =
-        await fetchRecentEarthquakes();
-
-    if (earthquakes.length === 0) {
-        return;
-    }
-
-    const usersResult = await pool.query(`
-        SELECT id, chat_id, lat, lon, city_name
-        FROM users
-        WHERE lat IS NOT NULL
-        AND lon IS NOT NULL
-    `);
-
-    const users = usersResult.rows;
-
-    for (const user of users) {
-
-        for (const quake of earthquakes) {
-
-            if (
-                !quake.id ||
-                !quake.geometry ||
-                !quake.geometry.coordinates
-            ) {
-                continue;
-            }
-
-            const magnitude =
-                Number(quake.properties?.mag);
-
-            const qLon =
-                Number(quake.geometry.coordinates[0]);
-
-            const qLat =
-                Number(quake.geometry.coordinates[1]);
-
-            const quakeTime =
-                Number(quake.properties?.time);
-
-            if (
-                !Number.isFinite(magnitude) ||
-                !Number.isFinite(qLat) ||
-                !Number.isFinite(qLon)
-            ) {
-                continue;
-            }
-
-            const distance =
-                calculateDistance(
-                    Number(user.lat),
-                    Number(user.lon),
-                    qLat,
-                    qLon
-                );
-
-            if (
-                !isDangerousEarthquake(
-                    magnitude,
-                    distance
-                )
-            ) {
-                continue;
-            }
-
-            // محاولة حجز التنبيه ذرياً
-            const claim = await pool.query(
-                `INSERT INTO user_alerts
-                (user_id, quake_id)
-                VALUES ($1, $2)
-                ON CONFLICT (user_id, quake_id)
-                DO NOTHING`,
-                [
-                    user.id,
-                    quake.id
-                ]
-            );
-
-            // إذا لم ننجح بالحجز، سيرفر آخر سبقنا
-            if (claim.rowCount === 0) {
-                continue;
-            }
-
-            const place =
-                quake.properties?.place ||
-                "موقع غير معروف";
-
-            const message =
-`🚨 تنبيه زلزالي
-
-🌋 القوة: ${magnitude.toFixed(1)} ريختر
-📍 الموقع: ${place}
-📏 المسافة التقريبية: ${Math.round(distance)} كم
-🏙️ منطقتك: ${user.city_name || "غير محددة"}
-
-⚠️ هذا تنبيه مبني على بيانات زلزالية مرصودة، وليس ضماناً لوصول إنذار قبل الاهتزاز.`;
-
-            const sent =
-                await sendTelegram(
-                    user.chat_id,
-                    message
-                );
-
-            // إذا فشل Telegram نحذف الحجز
-            // حتى يمكن إعادة المحاولة في الدورة القادمة
-            if (!sent) {
-
-                await pool.query(
-                    `DELETE FROM user_alerts
-                     WHERE user_id = $1
-                     AND quake_id = $2`,
-                    [
-                        user.id,
-                        quake.id
-                    ]
-                );
+                    if (insertCheck.rowCount > 0) {
+                        await safeSendTelegram(user.chatId, `⚠️ تنبيه زلزالي مرصود:\nالقوة: ${mag} ريختر\nالمسافة التقريبية: ${Math.round(dist)} كم عن (${user.cityName}).`);
+                    }
+                }
             }
         }
-    }
-}
-
-// =========================
-// تنظيف التنبيهات القديمة
-// =========================
-
-async function cleanupOldAlerts() {
-
-    try {
-
-        await pool.query(`
-            DELETE FROM user_alerts
-            WHERE sent_at < NOW() - INTERVAL '7 days'
-        `);
-
-    } catch (error) {
-
-        console.error(
-            "❌ Cleanup Error:",
-            error.message
-        );
-    }
-}
-
-// =========================
-// مراقب واحد فقط لكل Instance
-// =========================
-
-let checking = false;
-
-async function monitoringLoop() {
-
-    if (checking) {
-        return;
-    }
-
-    checking = true;
-
-    try {
-
-        await processEarthquakes();
-
-    } catch (error) {
-
-        console.error(
-            "❌ Monitoring Error:",
-            error.message
-        );
-
+    } catch (e) {
+        console.error("خطأ في دورة المراقبة:", e.message);
     } finally {
-
-        checking = false;
+        // تحرير القفل فور الانتهاء لتعمل الدورات القادمة بسلاسة
+        await client.query("SELECT pg_advisory_unlock(998877)").catch(() => {});
+        client.release();
     }
+}, 60000);
+
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-// =========================
-// Health Check
-// =========================
-
-app.get("/ping", (req, res) => {
-
-    res.json({
-        status: "online",
-        time: new Date().toISOString()
-    });
-});
-
-// =========================
-// بدء السيرفر
-// =========================
-
-async function startServer() {
-
-    await initDB();
-
-    app.listen(PORT, () => {
-
-        console.log(
-            `🚀 Server running on port ${PORT}`
-        );
-
-    });
-
-    // أول فحص بعد تشغيل السيرفر
-    await monitoringLoop();
-
-    // ثم كل دقيقة
-    setInterval(
-        monitoringLoop,
-        60000
-    );
-
-    // تنظيف يومي
-    setInterval(
-        cleanupOldAlerts,
-        24 * 60 * 60 * 1000
-    );
-}
-
-startServer().catch(error => {
-
-    console.error(
-        "❌ Server startup failed:",
-        error
-    );
-
-    process.exit(1);
-});
-
-// =========================
-// إغلاق آمن
-// =========================
-
-async function shutdown() {
-
-    console.log("🛑 إيقاف السيرفر...");
-
+async function safeSendTelegram(chatId, text) {
     try {
-        await pool.end();
-    } finally {
-        process.exit(0);
+        await axios.get(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+            params: { chat_id: chatId, text: text }
+        });
+    } catch (error) {
+        console.error(`فشل إرسال تيليجرام للـ ID ${chatId}:`, error.message);
     }
 }
 
-process.on("SIGTERM", shutdown);
-process.on("SIGINT", shutdown);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`السيرفر يعمل بأعلى كفاءة مع قفل الـ Instances على البورت ${PORT} 🚀`));
